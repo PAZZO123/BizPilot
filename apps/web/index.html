@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0F766E" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0F172A" media="(prefers-color-scheme: dark)" />
+    <meta
+      name="description"
+      content="BizPilot — record sales, track stock, send invoices and see your profit. Built for small shops."
+    />
+    <title>BizPilot — Know your business</title>
+
+    <!-- Inter for the interface, Playfair Display for headings — the same pairing
+         as VegetableHub, so the two products read as coming from the same shop. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@700;800&display=swap"
+      rel="stylesheet"
+    />
+
+    <script>
+      // Set the theme before the first paint. Doing this in React instead would
+      // flash a white page at anyone who chose dark — the worst possible frame
+      // to show someone opening the app at night.
+      (function () {
+        try {
+          var saved = localStorage.getItem('bizpilot-theme');
+          var dark =
+            saved === 'dark' ||
+            (saved !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          document.documentElement.classList.toggle('dark', dark);
+        } catch (_) {
+          /* private mode — light is a safe default */
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900" role="img" aria-label="A market stall stacked with produce">
+  <defs>
+    <linearGradient id="morning" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#134E4A"/>
+      <stop offset=".55" stop-color="#0F766E"/>
+      <stop offset="1" stop-color="#115E59"/>
+    </linearGradient>
+    <linearGradient id="table" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#A16207"/>
+      <stop offset="1" stop-color="#5C2E0A"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#morning)"/>
+
+  <!-- striped awning -->
+  <g>
+    <path d="M0 0 h1600 v150 H0z" fill="#0B3B37" opacity=".5"/>
+    <g>
+      <path d="M60 150 q80 70 160 0z" fill="#C2410C"/>
+      <path d="M220 150 q80 70 160 0z" fill="#F8F4ED"/>
+      <path d="M380 150 q80 70 160 0z" fill="#C2410C"/>
+      <path d="M540 150 q80 70 160 0z" fill="#F8F4ED"/>
+      <path d="M700 150 q80 70 160 0z" fill="#C2410C"/>
+      <path d="M860 150 q80 70 160 0z" fill="#F8F4ED"/>
+      <path d="M1020 150 q80 70 160 0z" fill="#C2410C"/>
+      <path d="M1180 150 q80 70 160 0z" fill="#F8F4ED"/>
+      <path d="M1340 150 q80 70 160 0z" fill="#C2410C"/>
+    </g>
+    <rect x="0" y="140" width="1600" height="16" fill="#78350F"/>
+  </g>
+
+  <!-- hanging scale -->
+  <g opacity=".55" stroke="#F0FDFA" stroke-width="4" fill="none">
+    <path d="M1290 156 v90"/>
+    <path d="M1240 246 h100"/>
+    <path d="M1240 246 l50 60 l50-60"/>
+  </g>
+
+  <!-- crates of produce -->
+  <g transform="translate(0,430)">
+    <!-- tomatoes -->
+    <g>
+      <rect x="120" y="90" width="280" height="150" rx="10" fill="#78350F"/>
+      <rect x="120" y="90" width="280" height="150" rx="10" fill="none" stroke="#A16207" stroke-width="6"/>
+      <g fill="#C2410C">
+        <circle cx="170" cy="90" r="34"/><circle cx="240" cy="82" r="36"/>
+        <circle cx="312" cy="88" r="34"/><circle cx="372" cy="96" r="28"/>
+        <circle cx="205" cy="52" r="30"/><circle cx="278" cy="48" r="32"/>
+        <circle cx="342" cy="58" r="28"/>
+      </g>
+    </g>
+    <!-- greens -->
+    <g>
+      <rect x="430" y="90" width="280" height="150" rx="10" fill="#78350F"/>
+      <rect x="430" y="90" width="280" height="150" rx="10" fill="none" stroke="#A16207" stroke-width="6"/>
+      <g fill="#4D7C0F">
+        <ellipse cx="486" cy="86" rx="46" ry="32"/><ellipse cx="566" cy="78" rx="48" ry="34"/>
+        <ellipse cx="648" cy="86" rx="46" ry="32"/>
+        <ellipse cx="524" cy="50" rx="42" ry="30"/><ellipse cx="610" cy="46" rx="44" ry="30"/>
+      </g>
+      <g fill="#6AA847">
+        <ellipse cx="500" cy="70" rx="26" ry="18"/><ellipse cx="590" cy="62" rx="28" ry="18"/>
+      </g>
+    </g>
+    <!-- carrots / roots -->
+    <g>
+      <rect x="740" y="90" width="280" height="150" rx="10" fill="#78350F"/>
+      <rect x="740" y="90" width="280" height="150" rx="10" fill="none" stroke="#A16207" stroke-width="6"/>
+      <g fill="#E8650A">
+        <path d="M780 96 l22-70 l22 70z"/><path d="M826 96 l22-78 l22 78z"/>
+        <path d="M872 96 l22-66 l22 66z"/><path d="M918 96 l22-74 l22 74z"/>
+        <path d="M964 96 l22-62 l22 62z"/>
+      </g>
+    </g>
+    <!-- bananas / plantain -->
+    <g>
+      <rect x="1050" y="90" width="280" height="150" rx="10" fill="#78350F"/>
+      <rect x="1050" y="90" width="280" height="150" rx="10" fill="none" stroke="#A16207" stroke-width="6"/>
+      <g fill="#EAB308" stroke="#A16207" stroke-width="3">
+        <path d="M1090 92 q30-60 90-52 q-40 22-56 52z"/>
+        <path d="M1160 92 q30-64 92-54 q-42 24-58 54z"/>
+        <path d="M1232 92 q28-56 86-48 q-38 20-54 48z"/>
+      </g>
+    </g>
+    <!-- sacks at the end -->
+    <g>
+      <path d="M1360 240 q10-140 66-140 q56 0 66 140z" fill="#A16207"/>
+      <ellipse cx="1426" cy="112" rx="34" ry="14" fill="#EAB308"/>
+    </g>
+
+    <!-- trestle table -->
+    <rect x="60" y="240" width="1480" height="30" rx="6" fill="url(#table)"/>
+    <rect x="180" y="270" width="24" height="200" fill="#5C2E0A"/>
+    <rect x="1380" y="270" width="24" height="200" fill="#5C2E0A"/>
+  </g>
+
+  <!-- chalk price board -->
+  <g transform="translate(1160,470)">
+    <rect x="0" y="0" width="230" height="150" rx="10" fill="#0B3B37" stroke="#A16207" stroke-width="8"/>
+    <g fill="#F8F4ED" opacity=".75">
+      <rect x="26" y="32" width="120" height="12" rx="6"/>
+      <rect x="26" y="62" width="170" height="12" rx="6"/>
+      <rect x="26" y="92" width="96" height="12" rx="6"/>
+    </g>
+  </g>
+
+  <!-- ground -->
+  <rect x="0" y="820" width="1600" height="80" fill="#0B3B37" opacity=".55"/>
+</svg>

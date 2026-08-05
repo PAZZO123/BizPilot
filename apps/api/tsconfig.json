@@ -1,0 +1,39 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "declaration": false,
+    "removeComments": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "target": "ES2022",
+    "sourceMap": true,
+    "outDir": "./dist",
+    // Pinning rootDir keeps the entrypoint at dist/main.js. Without it, adding
+    // any file outside src/ to `include` silently moves it to dist/src/main.js
+    // and breaks the production start command.
+    "rootDir": "./src",
+    "baseUrl": "./",
+    // Deliberately NOT incremental: nest-cli wipes dist/ before each build
+    // (deleteOutDir), but an incremental tsbuildinfo still believes those files
+    // are up to date and skips re-emitting them. The result is a dist/ missing
+    // whole directories and a server that dies on require() at boot.
+    "incremental": false,
+    "skipLibCheck": true,
+    "strict": true,
+    "strictNullChecks": true,
+    "noImplicitAny": true,
+    "strictBindCallApply": true,
+    "forceConsistentCasingInFileNames": true,
+    "noFallthroughCasesInSwitch": true,
+    "resolveJsonModule": true,
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  },
+  // prisma/seed.ts is run directly by ts-node and is deliberately not compiled
+  // into dist — it must never ship to production.
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

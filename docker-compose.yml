@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: bizpilot-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bizpilot
+      POSTGRES_PASSWORD: bizpilot
+      POSTGRES_DB: bizpilot
+    # 5432 and 5433 are taken on this machine by a local Postgres install and
+    # the `carsharing` container, so BizPilot sits on 5434.
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bizpilot -d bizpilot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: bizpilot-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
+  redis_data:

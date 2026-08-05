@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900" role="img" aria-label="A shop counter with a phone, receipts and a cash box">
+  <defs>
+    <linearGradient id="room" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#115E59"/>
+      <stop offset="1" stop-color="#0B3B37"/>
+    </linearGradient>
+    <linearGradient id="counterTop" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#B4813C"/>
+      <stop offset="1" stop-color="#78350F"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#room)"/>
+
+  <!-- back shelving, softly out of focus -->
+  <g opacity=".28">
+    <rect x="90" y="90" width="1420" height="14" rx="4" fill="#A16207"/>
+    <g fill="#F0FDFA">
+      <rect x="140" y="30" width="60" height="60" rx="8"/>
+      <rect x="220" y="18" width="48" height="72" rx="8" fill="#C2410C"/>
+      <rect x="288" y="36" width="66" height="54" rx="8" fill="#EAB308"/>
+      <rect x="374" y="24" width="52" height="66" rx="8" fill="#0369A1"/>
+      <rect x="446" y="40" width="60" height="50" rx="8"/>
+      <rect x="1080" y="28" width="58" height="62" rx="8" fill="#4D7C0F"/>
+      <rect x="1158" y="40" width="50" height="50" rx="8" fill="#BE185D"/>
+      <rect x="1228" y="20" width="64" height="70" rx="8"/>
+      <rect x="1312" y="36" width="52" height="54" rx="8" fill="#C2410C"/>
+    </g>
+    <rect x="90" y="230" width="1420" height="14" rx="4" fill="#A16207"/>
+    <g fill="#F0FDFA">
+      <rect x="150" y="176" width="70" height="54" rx="8" fill="#7E22CE"/>
+      <rect x="240" y="164" width="54" height="66" rx="8"/>
+      <rect x="314" y="184" width="62" height="46" rx="8" fill="#EAB308"/>
+      <rect x="1180" y="170" width="58" height="60" rx="8" fill="#0369A1"/>
+      <rect x="1258" y="182" width="66" height="48" rx="8"/>
+    </g>
+  </g>
+
+  <!-- counter -->
+  <rect x="0" y="520" width="1600" height="40" fill="url(#counterTop)"/>
+  <rect x="0" y="560" width="1600" height="340" fill="#5C2E0A"/>
+  <g opacity=".35" fill="#2E1605">
+    <rect x="260" y="560" width="10" height="340"/>
+    <rect x="700" y="560" width="10" height="340"/>
+    <rect x="1140" y="560" width="10" height="340"/>
+  </g>
+
+  <!-- phone showing a simple takings chart -->
+  <g transform="translate(560,250)">
+    <rect x="0" y="0" width="240" height="290" rx="26" fill="#0F172A" stroke="#334963" stroke-width="6"/>
+    <rect x="14" y="20" width="212" height="250" rx="14" fill="#F8F4ED"/>
+    <rect x="96" y="6" width="48" height="8" rx="4" fill="#334963"/>
+    <g fill="#0D9488">
+      <rect x="38" y="180" width="24" height="60" rx="6"/>
+      <rect x="72" y="152" width="24" height="88" rx="6"/>
+      <rect x="106" y="196" width="24" height="44" rx="6"/>
+      <rect x="140" y="124" width="24" height="116" rx="6"/>
+      <rect x="174" y="164" width="24" height="76" rx="6"/>
+    </g>
+    <rect x="38" y="52" width="120" height="14" rx="7" fill="#0F766E"/>
+    <rect x="38" y="78" width="76" height="10" rx="5" fill="#94A3B8"/>
+  </g>
+
+  <!-- cash box -->
+  <g transform="translate(180,400)">
+    <rect x="0" y="40" width="300" height="120" rx="12" fill="#334963"/>
+    <rect x="0" y="10" width="300" height="44" rx="10" fill="#475569"/>
+    <rect x="120" y="0" width="60" height="18" rx="9" fill="#94A3B8"/>
+    <g fill="#4D7C0F" opacity=".9">
+      <rect x="28" y="74" width="110" height="26" rx="4"/>
+      <rect x="36" y="104" width="110" height="26" rx="4"/>
+    </g>
+    <g fill="#0369A1" opacity=".9">
+      <rect x="164" y="74" width="110" height="26" rx="4"/>
+      <rect x="156" y="104" width="110" height="26" rx="4"/>
+    </g>
+  </g>
+
+  <!-- spike of receipts -->
+  <g transform="translate(1080,340)">
+    <rect x="86" y="0" width="8" height="180" rx="4" fill="#94A3B8"/>
+    <g fill="#F8F4ED">
+      <rect x="10" y="86" width="160" height="94" rx="6" transform="rotate(-4 90 133)"/>
+      <rect x="22" y="72" width="150" height="94" rx="6" transform="rotate(3 97 119)"/>
+    </g>
+    <g fill="#94A3B8" opacity=".8">
+      <rect x="42" y="104" width="94" height="8" rx="4"/>
+      <rect x="42" y="124" width="66" height="8" rx="4"/>
+      <rect x="42" y="144" width="80" height="8" rx="4"/>
+    </g>
+    <circle cx="90" cy="4" r="8" fill="#C2410C"/>
+  </g>
+
+  <!-- a hanging bulb, because every duka has one -->
+  <g>
+    <path d="M1440 0 v120" stroke="#94A3B8" stroke-width="4"/>
+    <circle cx="1440" cy="146" r="30" fill="#FDE68A" opacity=".9"/>
+    <circle cx="1440" cy="146" r="80" fill="#FDE68A" opacity=".14"/>
+  </g>
+</svg>

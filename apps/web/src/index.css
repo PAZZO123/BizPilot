@@ -1,0 +1,251 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-slate-50 text-slate-900 antialiased;
+  }
+
+  /* Most users are on a phone one-handed. 16px minimum stops iOS Safari
+     zooming the whole page when a field is focused. */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-brand-500 ring-offset-2;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-xl border border-slate-200 bg-white shadow-sm;
+  }
+
+  .label {
+    @apply mb-1 block text-sm font-medium text-slate-700;
+  }
+
+  .input {
+    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-slate-900
+           placeholder:text-slate-400 focus:border-brand-500 focus:outline-none
+           focus:ring-1 focus:ring-brand-500 disabled:bg-slate-50 disabled:text-slate-500;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm
+           font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply btn bg-brand-700 text-white hover:bg-brand-800 active:bg-brand-900;
+  }
+
+  .btn-secondary {
+    @apply btn border border-slate-300 bg-white text-slate-700 hover:bg-slate-50;
+  }
+
+  .btn-danger {
+    @apply btn bg-red-600 text-white hover:bg-red-700;
+  }
+
+  .btn-ghost {
+    @apply btn text-slate-600 hover:bg-slate-100;
+  }
+
+  .table-wrap {
+    /* Wide tables scroll inside their own box; the page itself must never
+       scroll sideways on a phone. */
+    @apply -mx-4 overflow-x-auto sm:mx-0;
+  }
+}
+
+/* Recharts injects its own focus outline on every bar; ours is enough. */
+.recharts-wrapper :focus {
+  outline: none;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Dark mode
+
+   Written as overrides on the light utility classes rather than a `dark:`
+   variant on every element. Twenty-odd screens already say `bg-white` and
+   `text-slate-900`; mapping those centrally means a new screen is dark-ready
+   the moment it is written, and nobody has to remember a second class.
+
+   Surface hierarchy, darkest to lightest:
+     #0F172A  page, sidebar, tab bar
+     #172032  sunken panels, table heads
+     #1E293B  cards and modals (what `bg-white` becomes)
+     #263045  inputs — a raised surface sitting inside a card
+     #2D3A50  hover
+   ────────────────────────────────────────────────────────────────────────── */
+
+html.dark {
+  color-scheme: dark;
+}
+
+html.dark body {
+  background-color: #0f172a;
+  color: #e2e8f0;
+}
+
+/* ── Surfaces ── */
+html.dark .bg-white       { background-color: #1e293b !important; }
+html.dark .bg-slate-50    { background-color: #172032 !important; }
+html.dark .bg-slate-100   { background-color: #263045 !important; }
+html.dark .bg-slate-900\/50 { background-color: rgba(2, 6, 23, 0.7) !important; }
+/* The landing header is translucent so the hero shows through it — a separate
+   class from plain `bg-white`, and it has to stay translucent when inverted. */
+html.dark .bg-white\/90   { background-color: rgba(15, 23, 42, 0.92) !important; }
+
+/* ── Borders ── */
+html.dark .border-slate-100 { border-color: #2d3f55 !important; }
+html.dark .border-slate-200 { border-color: #334963 !important; }
+html.dark .border-slate-300 { border-color: #3f5871 !important; }
+html.dark .divide-slate-100 > * + * { border-color: #2d3f55 !important; }
+html.dark .divide-slate-200 > * + * { border-color: #334963 !important; }
+
+/* ── Text ── */
+html.dark .text-slate-900 { color: #f1f5f9 !important; }
+html.dark .text-slate-800 { color: #e2e8f0 !important; }
+html.dark .text-slate-700 { color: #cbd5e1 !important; }
+html.dark .text-slate-600 { color: #a8b4c6 !important; }
+html.dark .text-slate-500 { color: #8d9ab0 !important; }
+html.dark .text-slate-400 { color: #6b7a91 !important; }
+/* text-slate-300 and lighter are deliberately not remapped. They are only used
+   where the background is already dark — captions over the hero photographs,
+   muted icons — so inverting them would push them into the background. */
+
+/* ── Brand tints ── */
+/* brand-50 as a background is a pale wash in light mode; at night it has to
+   become a dark wash of the same hue, or the active nav item glows white. */
+html.dark .bg-brand-50    { background-color: #0c2f2c !important; }
+html.dark .text-brand-800 { color: #7fe3d6 !important; }
+html.dark .text-brand-700 { color: #5eead4 !important; }
+
+/* ── Components ── */
+html.dark .card {
+  background-color: #1e293b !important;
+  border-color: #334963 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+html.dark .input,
+html.dark input,
+html.dark textarea,
+html.dark select {
+  background-color: #263045 !important;
+  border-color: #3f5871 !important;
+  color: #f1f5f9 !important;
+}
+html.dark .input::placeholder,
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: #6b7a91 !important;
+}
+html.dark .input:disabled,
+html.dark input:disabled,
+html.dark select:disabled {
+  background-color: #1c2536 !important;
+  color: #6b7a91 !important;
+}
+
+html.dark .btn-secondary {
+  background-color: #263045 !important;
+  border-color: #3f5871 !important;
+  color: #e2e8f0 !important;
+}
+html.dark .btn-secondary:hover { background-color: #2d3a50 !important; }
+html.dark .btn-ghost { color: #a8b4c6 !important; }
+html.dark .btn-ghost:hover { background-color: #263045 !important; }
+
+/* ── Hover surfaces ── */
+html.dark .hover\:bg-slate-50:hover  { background-color: #263045 !important; }
+html.dark .hover\:bg-slate-100:hover { background-color: #2d3a50 !important; }
+
+/* ── Shadows ── */
+html.dark .shadow-sm { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5) !important; }
+html.dark .shadow-xl { box-shadow: 0 6px 28px rgba(0, 0, 0, 0.6) !important; }
+
+/* ── Tinted status panels ──
+   The pale-50 tints are unreadable inverted, so each becomes a deep version of
+   its own hue with the text lifted back over it. */
+html.dark .bg-amber-50   { background-color: #241a05 !important; }
+html.dark .text-amber-900 { color: #fcd34d !important; }
+html.dark .text-amber-800 { color: #fbbf24 !important; }
+html.dark .text-amber-700 { color: #fbbf24 !important; }
+html.dark .border-amber-200 { border-color: #4a3510 !important; }
+
+html.dark .bg-emerald-100 { background-color: #05291c !important; }
+html.dark .text-emerald-800 { color: #6ee7b7 !important; }
+html.dark .text-emerald-700 { color: #34d399 !important; }
+html.dark .text-emerald-600 { color: #34d399 !important; }
+
+html.dark .bg-red-50  { background-color: #2a0d0d !important; }
+html.dark .bg-red-100 { background-color: #2a0d0d !important; }
+html.dark .text-red-900 { color: #fca5a5 !important; }
+html.dark .text-red-800 { color: #fca5a5 !important; }
+html.dark .text-red-600 { color: #f87171 !important; }
+html.dark .text-red-400 { color: #f87171 !important; }
+
+/* Hover states on the tinted alert cards, which lighten in light mode and so
+   have to lighten here too rather than jumping back to a pale tint. */
+html.dark .hover\:bg-amber-100:hover { background-color: #33260a !important; }
+html.dark .hover\:bg-red-100:hover   { background-color: #3a1414 !important; }
+html.dark .hover\:bg-slate-200:hover { background-color: #2d3a50 !important; }
+
+html.dark .bg-blue-100 { background-color: #0d1a33 !important; }
+html.dark .text-blue-800 { color: #93c5fd !important; }
+
+html.dark .bg-slate-100.text-slate-700 { color: #cbd5e1 !important; }
+
+/* ── Toasts ── */
+html.dark .bp-toast {
+  background-color: #1e293b !important;
+  color: #f1f5f9 !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6) !important;
+}
+
+/* ── Charts ──
+   Series colours, grid, axes and the tooltip all come from `useChartTheme()` in
+   lib/charts.ts, because Recharts takes them as props and CSS cannot reach the
+   marks. The one exception is tick label text: Recharts renders it as SVG
+   <text> with its own default fill, which no axis prop we pass controls. */
+html.dark .recharts-text { fill: #8d9ab0 !important; }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Landing hero backdrop
+   ────────────────────────────────────────────────────────────────────────── */
+
+.hero-slide {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  /* Long crossfade: two photographs are always partly visible, which hides the
+     seam between them far better than a quick cut. */
+  transition: opacity 2.2s ease-in-out;
+  will-change: opacity, transform;
+}
+
+.hero-slide[data-active='true'] {
+  opacity: 1;
+}
+
+/* Someone who has asked their phone to stop animating gets a still image. */
+@media (prefers-reduced-motion: reduce) {
+  .hero-slide {
+    transition: none;
+    animation: none !important;
+    transform: none !important;
+  }
+}
