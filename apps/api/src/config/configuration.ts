@@ -1,6 +1,25 @@
 import { z } from 'zod';
 
 /**
+ * A URL that tolerates being given a bare hostname.
+ *
+ * Render's blueprint can wire a service's own address in with
+ * `fromService: { property: host }`, but that yields "bizpilot-api.onrender.com"
+ * — a hostname, with no scheme. Demanding a full URL means the app refuses to
+ * boot on a value the platform generated for it, which is a silly way to fail.
+ * Prefix https:// when the scheme is missing and leave anything else alone.
+ */
+function hostOrUrl(fallback: string) {
+  return z.preprocess(
+    (value) =>
+      typeof value === 'string' && value !== '' && !/^https?:\/\//i.test(value)
+        ? `https://${value}`
+        : value,
+    z.string().url().default(fallback),
+  );
+}
+
+/**
  * Environment contract. The app refuses to boot if anything required is
  * missing or malformed — a misconfigured deploy should fail loudly at startup,
  * not silently at 2am when a webhook arrives.
@@ -9,8 +28,8 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(4000),
   CORS_ORIGINS: z.string().default('http://localhost:5173'),
-  WEB_URL: z.string().url().default('http://localhost:5173'),
-  API_URL: z.string().url().default('http://localhost:4000'),
+  WEB_URL: hostOrUrl('http://localhost:5173'),
+  API_URL: hostOrUrl('http://localhost:4000'),
 
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   /**
