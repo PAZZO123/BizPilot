@@ -89,9 +89,11 @@ Render reads `render.yaml` and builds three things — the database is Neon's jo
 The first build takes 5–10 minutes. The API will fail its health check on this
 first pass — expected, it has no `WEB_URL` yet. Carry on.
 
-> **If Render says a name is taken**, it appends a suffix — you might get
-> `bizpilot-api-a4f2`. Fine, just use *your* actual URLs everywhere below
-> instead of the example ones.
+> **Expect a suffix.** Service names are global across all of Render, and both
+> `bizpilot-api` and `bizpilot-web` are already taken — so you will get
+> something like `bizpilot-api-si8e` and `bizpilot-web-mr4y`, with *different*
+> suffixes for each. Do not guess them and do not assume they match. Step 3
+> exists to make you read the real ones off the dashboard.
 
 ---
 
@@ -107,6 +109,12 @@ Yours will differ if step 2 gave you a suffix. Every step below uses these two.
 ---
 
 ## 4. Wire the two services to each other
+
+> Once you know the real URLs, the tidier place for them is `render.yaml`
+> itself, as plain `value:` entries — that is what this repo now does. They are
+> not secrets, they are facts about the deployment, and keeping them in the
+> blueprint means a re-sync restores them instead of quietly reverting to blank.
+> Change them there and push; the steps below are for setting them by hand.
 
 They cannot know each other's addresses until both exist, which is why this is
 manual.
@@ -251,6 +259,9 @@ are in it, these stop being optional:
 | First request of the day takes ~50 seconds | The free instance was asleep. Expected. Only an upgrade fixes it. |
 | No **Platform** item in the sidebar | Your logged-in email is not in `PLATFORM_ADMIN_EMAILS`, or the API has not restarted since you set it. |
 | Deploy fails on `npm ci` | `package-lock.json` is out of step with `package.json`. Run `npm install` locally, commit the lock file, push. |
+| Build fails compiling TypeScript with an error about a setting that works locally | `NODE_ENV=production` makes npm skip devDependencies at install time, so the project's own TypeScript is missing and `tsc` resolves to whatever is on the image's PATH. Both build commands pass `--include=dev` for this reason — do not remove it. |
+| The app boots locally but not on Render, on a value Render generated | `fromService: { property: host }` yields a bare hostname, not a URL. `WEB_URL` and `API_URL` prefix `https://` themselves; anything new that needs a URL should too. |
+| A deploy behaves differently from your machine for no clear reason | Check the Node version in the build log. `engines` is a floor, not a pin — `NODE_VERSION` is set to 22 on both services to stop the host picking something newer. |
 
 ---
 
