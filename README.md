@@ -116,15 +116,26 @@ npm run build          # production build of everything
 
 ---
 
-## Deploying to Render
+## Deploying
 
-The repo has a blueprint that creates all four pieces at once.
+Two providers, both with a free tier: **Neon** for Postgres, **Render** for
+everything else. [docs/DEPLOY.md](docs/DEPLOY.md) is the click-by-click version;
+this is the shape of it.
 
-**1. Push to GitHub, then:** Render dashboard → **New → Blueprint** → pick the repo.
-It reads `render.yaml` and creates the Postgres database, Redis, the API and the
-static site.
+The split is deliberate. Render's own free Postgres is deleted after 30 days,
+taking the data with it; Neon's free tier does not expire.
 
-**2. Wire the two URLs to each other.** Render will not know them until the services
+**1. Create a Neon project** in Frankfurt on Postgres 16. In its connection
+string panel switch the dropdown to **Prisma** and copy both strings it prints.
+The pooled one (`-pooler` in the host) is `DATABASE_URL`; the direct one is
+`DIRECT_URL`. Migrations need the direct connection — advisory locks do not
+survive transaction-mode pooling.
+
+**2. Render dashboard → New → Blueprint** → pick the repo. It reads
+`render.yaml` and creates the key value store, the API and the static site.
+Paste the two Neon strings when it asks; leave the rest blank.
+
+**3. Wire the two URLs to each other.** Render will not know them until the services
 exist, so set these by hand afterwards:
 
 | Service | Variable | Value |
@@ -136,7 +147,7 @@ exist, so set these by hand afterwards:
 Then trigger a manual deploy of **bizpilot-web** — `VITE_API_URL` is baked in at
 build time, so it will not pick the change up on its own.
 
-**3. Add your secrets** to `bizpilot-api` (Environment tab):
+**4. Add your secrets** to `bizpilot-api` (Environment tab):
 
 - `PLATFORM_ADMIN_EMAILS` — your own email. This is what unlocks the platform
   dashboard (your MRR, every shop's usage). Blank means nobody can see it. Then
@@ -151,22 +162,24 @@ build time, so it will not pick the change up on its own.
 - `AFRICASTALKING_USERNAME` / `AFRICASTALKING_API_KEY`, and set `SMS_PROVIDER` to
   `africastalking`, when you are ready to send real texts.
 
-**4. Point Flutterwave's webhook at** `https://bizpilot-api.onrender.com/api/webhooks/flutterwave`.
+**5. Point Flutterwave's webhook at** `https://bizpilot-api.onrender.com/api/webhooks/flutterwave`.
 
 Migrations run automatically on every deploy (`prisma migrate deploy` in the start
 command), so there is nothing manual to do on release.
 
 ### Before you take real money
 
-The blueprint uses Render's **free** plans so you can see it working for nothing.
-Three things must change before a real shop depends on it:
+Everything above runs on free plans. Three things must change before a real shop
+depends on it:
 
-1. **Upgrade the database.** A free Render Postgres is **deleted after 30 days**.
-   This is the one that will actually lose somebody's business records.
+1. **Set up backups.** Neon means the database is not deleted after 30 days, but
+   that is not the same as being backed up. Check the restore window your plan
+   actually gives you, then restore from a backup once to prove it works.
 2. **Upgrade the API instance.** A free web service sleeps after 15 minutes idle and
    takes ~50 seconds to wake — a shopkeeper with a queue of customers will not wait.
    Sleeping also stops the cron jobs that mark invoices overdue and send reminders.
-3. **Set up backups.** Render's paid Postgres has daily backups; turn them on.
+3. **Fix the top three items in [docs/SECURITY.md](docs/SECURITY.md)** — refresh
+   tokens in `localStorage`, no token-reuse detection, no email verification.
 
 ---
 

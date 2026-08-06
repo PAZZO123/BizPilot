@@ -321,7 +321,19 @@ unchanged, leaving a partial `dist/` and a `MODULE_NOT_FOUND` at runtime.
 
 ## 6. Deploying
 
-`render.yaml` creates all four services. After the first deploy, set by hand:
+Postgres runs on **Neon**, everything else on **Render**. The split exists
+because Render's free Postgres is deleted after 30 days and Neon's free tier is
+not.
+
+That costs one piece of complexity, and it is worth knowing where it lives:
+`schema.prisma` declares **two** connection URLs. `url` is Neon's pooled
+endpoint and carries every query the app makes; `directUrl` bypasses the pooler
+and exists solely for `prisma migrate`, whose advisory locks do not survive
+transaction-mode pooling. On a database with no pooler in front of it — local
+Docker — both are set to the same string.
+
+`render.yaml` creates the other three services. After the first deploy, set by
+hand:
 `WEB_URL` and `CORS_ORIGINS` on the API, `VITE_API_URL` on the web service (it
 is baked in at build time, so redeploy the static site after changing it), and
 the secrets — `PLATFORM_ADMIN_EMAILS`, `ANTHROPIC_API_KEY`, the Flutterwave

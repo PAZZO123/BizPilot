@@ -1,22 +1,25 @@
 # Render blueprint for BizPilot.
 #
 # Deploy with: Render dashboard → New → Blueprint → point at this repo.
-# Everything below is created in one go: Postgres, Redis, the API and the web app.
+# It creates three things in one go: the key value store, the API and the web app.
+# The database is separate — see below.
 #
-# After the first deploy you must set the secrets marked `sync: false` in the
-# Render dashboard — they are deliberately not in this file.
+# After the first deploy you must set the values marked `sync: false` in the
+# Render dashboard. They are deliberately not in this file.
 
-# Every service must sit in the SAME region. Render's private network is
-# per-region, so an API in Frankfurt cannot reach a database left on the default
-# (Oregon) — the deploy builds fine and then fails at boot, unable to connect.
-databases:
-  - name: bizpilot-db
-    databaseName: bizpilot
-    user: bizpilot
-    region: frankfurt
-    plan: free # upgrade to `basic` before real customers: free expires after 30 days
-    postgresMajorVersion: '16'
-
+# The database is NOT declared here — it lives on Neon.
+#
+# Render's own free Postgres is deleted after 30 days, taking every shop's
+# records with it. Neon's free tier does not expire, which is the difference
+# between a link you can leave up and one that dies next month. The cost is a
+# hop over the public internet instead of Render's private network, and two
+# connection strings instead of one (see DATABASE_URL / DIRECT_URL below).
+#
+# See docs/DEPLOY.md section 1 for creating the Neon project.
+#
+# Everything that IS here must sit in the SAME region. Render's private network
+# is per-region, so an API in Frankfurt cannot reach a key value store left on
+# the default (Oregon) — it builds fine and then fails at boot.
 services:
   # ---------------------------------------------------------------------------
   # Redis — BullMQ queues (SMS), dashboard cache, receipt/invoice numbering
@@ -53,10 +56,18 @@ services:
         value: production
       - key: PORT
         value: 10000 # Render's default internal port
+      # Both come from the Neon dashboard. Pick "Prisma" in their connection
+      # string widget and it prints the two you need.
+      #   DATABASE_URL — the POOLED endpoint ("-pooler" in the host). All normal
+      #                  queries. Neon's compute scales to zero and the pooler
+      #                  handles waking it.
+      #   DIRECT_URL   — the direct endpoint, no pooler. `prisma migrate deploy`
+      #                  runs in the start command below and takes advisory
+      #                  locks, which do not survive transaction-mode pooling.
       - key: DATABASE_URL
-        fromDatabase:
-          name: bizpilot-db
-          property: connectionString
+        sync: false
+      - key: DIRECT_URL
+        sync: false
       - key: REDIS_URL
         fromService:
           name: bizpilot-redis

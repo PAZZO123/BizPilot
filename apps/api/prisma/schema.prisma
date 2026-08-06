@@ -19,9 +19,23 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// Two URLs, because a serverless Postgres (Neon) puts a connection pooler in
+// front of the database:
+//
+//   url       — the pooled endpoint. Everything the running app does goes here.
+//               The compute scales to zero when idle and the pooler handles
+//               waking it and reconnecting.
+//   directUrl — a direct connection, bypassing the pooler. `prisma migrate`
+//               takes advisory locks, and those do not survive transaction-mode
+//               pooling: run migrations through the pooler and they fail with a
+//               lock error that reads like a network problem.
+//
+// On a plain Postgres with no pooler — local Docker, or Render's built-in
+// database — set both to the same value.
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ---------------------------------------------------------------------------

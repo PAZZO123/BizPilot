@@ -13,6 +13,12 @@ const envSchema = z.object({
   API_URL: z.string().url().default('http://localhost:4000'),
 
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
+  /**
+   * A direct (unpooled) connection, used only by `prisma migrate` — which runs
+   * in the start command, so it has to be present at runtime. On a database
+   * with no pooler in front of it, set this to the same value as DATABASE_URL.
+   */
+  DIRECT_URL: z.string().min(1, 'DIRECT_URL is required (same as DATABASE_URL if there is no pooler)'),
   REDIS_URL: z.string().min(1, 'REDIS_URL is required'),
 
   JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters'),
