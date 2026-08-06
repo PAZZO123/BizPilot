@@ -41,8 +41,14 @@ services:
     region: frankfurt # closest Render region to Rwanda
     branch: main
     healthCheckPath: /api/health
+    # `--include=dev` is load-bearing. NODE_ENV=production is set below for the
+    # runtime, and npm reads it at install time too: without the flag it omits
+    # devDependencies, so TypeScript, the Nest CLI and the Prisma CLI are all
+    # missing. The build then falls through to whatever `tsc` happens to be on
+    # the system PATH and fails with an error about the *project's* config that
+    # the project's own pinned TypeScript would never have raised.
     buildCommand: >-
-      npm ci &&
+      npm ci --include=dev &&
       npm run build --workspace=packages/shared &&
       npx prisma generate --schema=apps/api/prisma/schema.prisma &&
       npm run build --workspace=apps/api
@@ -54,6 +60,11 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      # Pinned, not a floor. `engines: >=20` lets the host pick the newest
+      # release it has — which was Node 26 — so production silently ran a
+      # different major version from every developer machine. Match local.
+      - key: NODE_VERSION
+        value: '22'
       - key: PORT
         value: 10000 # Render's default internal port
       # Both come from the Neon dashboard. Pick "Prisma" in their connection
@@ -129,11 +140,16 @@ services:
     runtime: static
     branch: main
     buildCommand: >-
-      npm ci &&
+      npm ci --include=dev &&
       npm run build --workspace=packages/shared &&
       npm run build --workspace=apps/web
     staticPublishPath: apps/web/dist
     envVars:
+      # This service has no NODE_ENV, so npm installs devDependencies anyway —
+      # but pin the version and the flag here too, so the two services cannot
+      # drift into building against different toolchains.
+      - key: NODE_VERSION
+        value: '22'
       # Baked in at build time. Set it to https://<api-host>/api once the API
       # service exists, then trigger a rebuild of this site.
       - key: VITE_API_URL

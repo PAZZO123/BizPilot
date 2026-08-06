@@ -131,7 +131,15 @@ no unit tests, and the money helpers (`applyBps` rounding, `parseMoney`) are
 exactly the kind of pure functions that should have them. There are no frontend
 tests at all.
 
-**No CI.** Nothing runs the typecheck, the build or the smoke test on push.
+**No CI.** Nothing runs the typecheck, the build or the smoke test on push. The
+first production deploy failed on something a five-second CI job would have
+caught, and the feedback loop was a ten-minute cloud build instead.
+
+**`packages/shared/tsconfig.json` still uses `moduleResolution: "node"`.** That
+is the old node10 algorithm. TypeScript 5 accepts it with a deprecation warning;
+TypeScript 6 and 7 remove it outright, so this breaks the moment the toolchain
+is upgraded. Move it and `module` to `node16` together — deliberately, with the
+build verified, not during a deploy.
 
 **The dashboard cache is invalidated by hand.** `reports.invalidate()` is called
 after writes. A missed call means a shopkeeper sees a stale figure for 60
