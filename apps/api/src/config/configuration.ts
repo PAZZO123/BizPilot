@@ -58,7 +58,18 @@ const envSchema = z.object({
 export type Env = z.infer<typeof envSchema>;
 
 export function validateEnv(raw: Record<string, unknown>): Env {
-  const result = envSchema.safeParse(raw);
+  // Treat an empty value as "not set".
+  //
+  // Zod applies `.default()` only when a key is `undefined`, never when it is
+  // an empty string. Hosting dashboards do not make that distinction: leaving a
+  // field blank in Render's blueprint form creates the variable with an empty
+  // value. Without this, a blank WEB_URL reaches `.url()` as "" and the whole
+  // API refuses to boot — on a field that has a perfectly good default.
+  const cleaned = Object.fromEntries(
+    Object.entries(raw).filter(([, value]) => value !== ''),
+  );
+
+  const result = envSchema.safeParse(cleaned);
   if (!result.success) {
     const details = result.error.issues
       .map((issue) => `  - ${issue.path.join('.')}: ${issue.message}`)
