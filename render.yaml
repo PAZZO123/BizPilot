@@ -98,12 +98,18 @@ services:
           name: bizpilot-api
           type: web
           property: host
-      # Must match the web service's URL exactly, or the browser blocks every
-      # request. Update it in the dashboard once the static site has its domain.
+      # The live static site. Render appends a random suffix when a service name
+      # is already taken globally — "bizpilot-web" was, so the real host is
+      # bizpilot-web-mr4y. Set here rather than left to the dashboard so the
+      # value is version-controlled and a re-sync cannot silently drop it.
+      #
+      # CORS_ORIGINS must match what the browser sends, character for character:
+      # scheme, host, no trailing slash. Anything else and every request from the
+      # app is blocked.
       - key: WEB_URL
-        sync: false
+        value: https://bizpilot-web-mr4y.onrender.com
       - key: CORS_ORIGINS
-        sync: false
+        value: https://bizpilot-web-mr4y.onrender.com
       # --- Secrets: set these in the Render dashboard ---------------------
       # Comma-separated emails allowed to see BizPilot's own revenue dashboard.
       # Empty means nobody; set it to your own address after the first deploy.
@@ -150,10 +156,12 @@ services:
       # drift into building against different toolchains.
       - key: NODE_VERSION
         value: '22'
-      # Baked in at build time. Set it to https://<api-host>/api once the API
-      # service exists, then trigger a rebuild of this site.
+      # Baked into the JavaScript at build time, so changing it needs a rebuild
+      # of this site — it is not picked up by a restart. The API service also
+      # got a suffix: the real host is bizpilot-api-si8e. Note the /api path,
+      # which the other two URLs do not have.
       - key: VITE_API_URL
-        sync: false
+        value: https://bizpilot-api-si8e.onrender.com/api
     routes:
       # Single-page app: every unknown path must serve index.html or a refresh
       # on /app/sales returns a 404.
