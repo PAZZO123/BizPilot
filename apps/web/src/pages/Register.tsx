@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Input, Select, Spinner } from '../components/ui';
+import { PasswordFields, isPasswordValid } from '../components/PasswordFields';
 import { errorMessage } from '../lib/api';
 import { useAuth } from '../store/auth';
 
@@ -25,6 +26,9 @@ export function Register() {
     phone: '',
     password: '',
   });
+  // Kept out of `form` deliberately — it is never sent to the API.
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -35,7 +39,21 @@ export function Register() {
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    setSubmitted(true);
     setError('');
+
+    // Checked here as well as in the fields themselves: the rules below mirror
+    // what the API enforces, and catching it now saves a round trip that would
+    // come back as a validation error with no idea which field it meant.
+    if (!isPasswordValid(form.password)) {
+      setError('Your password needs at least 8 characters, including a letter and a number.');
+      return;
+    }
+    if (form.password !== confirmPassword) {
+      setError('The two passwords do not match.');
+      return;
+    }
+
     setBusy(true);
     try {
       await register(form);
@@ -106,16 +124,12 @@ export function Register() {
               placeholder="+250 788 123 456"
               hint="Optional. Used for SMS reminders you send."
             />
-            <Input
-              label="Password"
-              name="password"
-              type="password"
-              autoComplete="new-password"
-              required
-              minLength={8}
-              value={form.password}
-              onChange={update('password')}
-              hint="At least 8 characters, with a letter and a number."
+            <PasswordFields
+              password={form.password}
+              confirm={confirmPassword}
+              onPasswordChange={(value) => setForm((current) => ({ ...current, password: value }))}
+              onConfirmChange={setConfirmPassword}
+              submitted={submitted}
             />
 
             {error && (
