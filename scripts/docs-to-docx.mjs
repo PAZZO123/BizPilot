@@ -36,6 +36,7 @@ const OUT_DIR = path.join(ROOT, 'docs', 'word');
 
 const SOURCES = [
   { file: 'README.md', title: 'BizPilot — Overview' },
+  { file: 'docs/DEPLOY.md', title: 'BizPilot — Putting it live' },
   { file: 'docs/ARCHITECTURE.md', title: 'BizPilot — How it works' },
   { file: 'docs/SECURITY.md', title: 'BizPilot — Security' },
   { file: 'docs/ROADMAP.md', title: 'BizPilot — What is missing' },

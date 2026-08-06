@@ -34,6 +34,7 @@ go out with a link the customer can pay from their own phone.
 
 | Document | What is in it |
 |---|---|
+| [docs/DEPLOY.md](docs/DEPLOY.md) | Step by step from an empty Render account to a live URL, on the free tier |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the system works, module by module, and the two rules that explain most of the code |
 | [docs/SECURITY.md](docs/SECURITY.md) | What is done properly, and an honest list of the weaknesses with severities |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | What is missing — including what must be fixed before a real shop depends on it |

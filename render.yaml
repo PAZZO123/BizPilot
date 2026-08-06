@@ -6,11 +6,15 @@
 # After the first deploy you must set the secrets marked `sync: false` in the
 # Render dashboard — they are deliberately not in this file.
 
+# Every service must sit in the SAME region. Render's private network is
+# per-region, so an API in Frankfurt cannot reach a database left on the default
+# (Oregon) — the deploy builds fine and then fails at boot, unable to connect.
 databases:
   - name: bizpilot-db
     databaseName: bizpilot
     user: bizpilot
-    plan: free # upgrade to `starter` before real customers: free wipes after 30 days
+    region: frankfurt
+    plan: free # upgrade to `basic` before real customers: free expires after 30 days
     postgresMajorVersion: '16'
 
 services:
@@ -19,6 +23,7 @@ services:
   # ---------------------------------------------------------------------------
   - type: keyvalue
     name: bizpilot-redis
+    region: frankfurt
     plan: free
     ipAllowList: [] # reachable only from inside Render's private network
     maxmemoryPolicy: noeviction # BullMQ jobs must never be evicted
