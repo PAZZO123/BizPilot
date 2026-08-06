@@ -27,24 +27,31 @@ Do this first — Render needs the connection strings.
      region or every query pays a transatlantic round trip.
    - **Postgres version: 16**, to match what the migrations were written
      against.
-3. On the project dashboard find the **connection string** panel and change the
-   dropdown from *psql* to **Prisma**. Neon then prints exactly the two strings
-   this app needs:
+3. Hit **Connect**, set the framework dropdown to **Prisma**, leave
+   **Connection pooling** on, and click **Show password**. Neon prints two
+   strings, on the `.env` tab:
 
    ```
-   DATABASE_URL="postgresql://…@ep-xxx-pooler.eu-central-1.aws.neon.tech/…"
-   DIRECT_URL="postgresql://…@ep-xxx.eu-central-1.aws.neon.tech/…"
+   DATABASE_URL="postgresql://…@ep-xxx-pooler.c-4.eu-central-1.aws.neon.tech/neondb?sslmode=require…"
+   DATABASE_URL_UNPOOLED="postgresql://…@ep-xxx.c-4.eu-central-1.aws.neon.tech/neondb?sslmode=require…"
    ```
 
-   Copy both somewhere for a minute. Note the difference: the first host has
-   **`-pooler`** in it, the second does not.
+   They are identical apart from **`-pooler`** in the first host.
 
-> **Why two?** The pooled one is for the running app — Neon's compute scales to
-> zero when idle and the pooler handles waking it. `prisma migrate` cannot use
-> it, because it takes advisory locks that do not survive transaction-mode
-> pooling. Give it the pooled URL and migrations fail at boot with a lock error
-> that reads like a network fault. This is the single most common way to get
-> this setup wrong.
+> **Watch the name.** Neon calls the second one `DATABASE_URL_UNPOOLED`; this app
+> calls it **`DIRECT_URL`**. Same value, different variable name — use ours when
+> you paste into Render.
+
+> **Why two?** The pooled endpoint is for the running app: Neon's compute scales
+> to zero when idle and the pooler handles waking it and reconnecting. The direct
+> one is for `prisma migrate`, which issues DDL and takes advisory locks.
+>
+> Neon's snippet says the direct URL is only needed on Prisma < 5.10, and this
+> project is on 5.22 — so strictly it would work without. Set it anyway. It is
+> the configuration Prisma documents for a pooled database, it costs nothing, and
+> it removes a class of migration failure rather than trusting the pooler to
+> handle DDL correctly. `schema.prisma` declares it and the env check requires
+> it.
 
 ---
 
@@ -234,7 +241,8 @@ are in it, these stop being optional:
 | What you see | What it is |
 |---|---|
 | Deploy log: migration fails on an **advisory lock**, or hangs then times out | `DIRECT_URL` is pointing at the pooled endpoint. It must be the host **without** `-pooler`. This is the most common failure of this setup. |
-| Deploy log: `Can't reach database server` | Check `DATABASE_URL` was pasted whole — Neon's strings are long and easy to truncate — and that the Neon project is not suspended. |
+| Deploy log: `Can't reach database server` | Check `DATABASE_URL` was pasted whole — Neon's strings are long and easy to truncate — and that you clicked **Show password** first, so it is the real password and not a row of asterisks. |
+| Deploy log complains about an unrecognised parameter, mentioning `channel_binding` | Neon appends `&channel_binding=require` to its strings. If Prisma objects, delete that parameter from both URLs. `sslmode=require` is the one that matters. |
 | API deploy fails, log says it cannot reach the **key value store** | Render's private network is per-region. `render.yaml` puts both in `frankfurt`; if you changed one, change both. |
 | Everything works but feels slow | Check the Neon project region is Frankfurt, not the US default. |
 | Every request from the app fails, console mentions CORS | `CORS_ORIGINS` does not exactly match the web URL. No trailing slash, and `https` not `http`. |
