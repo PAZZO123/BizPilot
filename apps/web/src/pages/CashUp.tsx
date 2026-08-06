@@ -7,6 +7,7 @@ import { api, errorMessage } from '../lib/api';
 import { useChartTheme } from '../lib/charts';
 import { formatMoney, formatMoneyShort, formatNumber, todayIso } from '../lib/format';
 import { Card, ErrorState, Input, PageHeader, PageLoader, StatTile } from '../components/ui';
+import { DownloadPdfButton } from '../components/DownloadPdfButton';
 
 interface CashUp {
   date: string;
@@ -89,14 +90,21 @@ export function CashUp() {
         title="End of day"
         subtitle="Count the drawer and close the day."
         action={
-          <Input
-            type="date"
-            aria-label="Day to close"
-            value={date}
-            max={todayIso()}
-            onChange={(event) => setDate(event.target.value)}
-            className="w-auto"
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              type="date"
+              aria-label="Day to close"
+              value={date}
+              max={todayIso()}
+              onChange={(event) => setDate(event.target.value)}
+              className="w-auto"
+            />
+            <DownloadPdfButton
+              label="Print sheet"
+              path="/reports/cash-up.pdf"
+              params={{ date }}
+            />
+          </div>
         }
       />
 

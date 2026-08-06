@@ -71,8 +71,12 @@ that is currently sold but not delivered — check `PLANS.business.features.mult
 before advertising it.
 
 ### Data export
-`dataExport` is listed as a paid feature and there is no export endpoint. Either
-build it or remove it from the pricing page.
+Partly delivered. `dataExport` now unlocks two printable PDFs — the profit &
+loss statement and the daily cash-up sheet, both with signature blocks. What is
+still missing is raw export: CSV of sales, products and customers, so an owner
+can take their data to an accountant or leave for another product without
+asking. A paid feature called "data export" that only produces PDFs is a
+stretch.
 
 ### Timezones
 `Business.timezone` is stored and ignored. Every date boundary — "today",

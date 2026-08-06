@@ -20,6 +20,7 @@ go out with a link the customer can pay from their own phone.
 | **Expenses** | Categorised spending so the profit figure means something |
 | **Reports** | Profit & loss, gross margin, best sellers by profit, spend by category, payment-method mix, busiest hours, cash tied up in dead stock |
 | **End of day** | Cash-up: what should be in the drawer, counted against what is, plus who served and when the money came in |
+| **Printable reports** | Profit & loss and the daily cash-up sheet as clean PDFs — tables, totals, page numbers, and signature blocks with names for whoever prepared and approved them |
 | **Platform dashboard** | Your own books — MRR, trials ending this week, churn, cash collected, and what SMS and AI cost you against it |
 | **AI assistant** | Ask questions in plain language ("who owes me money?") answered from the business's own records via Claude tool use |
 | **SMS** | Queue-backed reminders, automatic 3-day overdue nudges, Africa's Talking / Twilio / log providers |
@@ -36,6 +37,14 @@ go out with a link the customer can pay from their own phone.
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the system works, module by module, and the two rules that explain most of the code |
 | [docs/SECURITY.md](docs/SECURITY.md) | What is done properly, and an honest list of the weaknesses with severities |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | What is missing — including what must be fixed before a real shop depends on it |
+
+Word versions of all four live in [docs/word/](docs/word/) for sharing with
+people who do not read markdown. **The markdown is the source of truth** — the
+`.docx` files are generated from it and are overwritten:
+
+```bash
+npm run docs:docx
+```
 
 ---
 

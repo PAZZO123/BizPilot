@@ -108,6 +108,53 @@ export function errorMessage(error: unknown, fallback = 'Something went wrong.')
   return fallback;
 }
 
+/**
+ * Downloads a file from an authenticated endpoint.
+ *
+ * A plain `<a href>` cannot be used: these routes need the bearer token, and an
+ * anchor sends no Authorization header. So the response comes back through axios
+ * as a blob and is handed to the browser as a temporary object URL.
+ *
+ * Errors are re-thrown as normal axios errors even though the response body is a
+ * Blob — otherwise a 403 telling the owner to upgrade would surface as
+ * unreadable binary in a toast.
+ */
+export async function downloadFile(
+  path: string,
+  params?: Record<string, string | undefined>,
+  fallbackFilename = 'report.pdf',
+): Promise<void> {
+  try {
+    const response = await api.get<Blob>(path, { params, responseType: 'blob' });
+
+    // Prefer the server's filename — it carries the period, so a folder of
+    // these sorts chronologically.
+    const disposition = response.headers['content-disposition'] as string | undefined;
+    const match = disposition?.match(/filename="?([^"]+)"?/);
+    const filename = match?.[1] ?? fallbackFilename;
+
+    const url = URL.createObjectURL(response.data);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    // Revoking immediately can cancel the download in some browsers.
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.data instanceof Blob) {
+      const text = await error.response.data.text();
+      try {
+        error.response.data = JSON.parse(text);
+      } catch {
+        error.response.data = { message: text };
+      }
+    }
+    throw error;
+  }
+}
+
 /** True when the API refused because the business needs a bigger plan. */
 export function isPlanLimitError(error: unknown): boolean {
   if (!axios.isAxiosError(error)) return false;

@@ -1,14 +1,19 @@
-import { Controller, Get, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { Controller, Get, Query, Res } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiProduces, ApiQuery, ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { UserRole } from '@prisma/client';
-import { BusinessId, Roles } from '../../common/decorators';
+import { BusinessId, CurrentUser, Roles, type RequestUser } from '../../common/decorators';
 import { ReportsService } from './reports.service';
+import { ReportPdfService } from './report-pdf.service';
 
 @ApiTags('reports')
 @ApiBearerAuth()
 @Controller('reports')
 export class ReportsController {
-  constructor(private readonly reports: ReportsService) {}
+  constructor(
+    private readonly reports: ReportsService,
+    private readonly pdf: ReportPdfService,
+  ) {}
 
   @Get('dashboard')
   @ApiOperation({ summary: 'Headline numbers for the home screen' })
@@ -82,6 +87,43 @@ export class ReportsController {
     return this.reports.salesByUser(businessId, start, end);
   }
 
+  // --- Printable, signable reports -----------------------------------------
+  //
+  // `attachment` rather than `inline`: these are meant to be saved and printed,
+  // and a browser tab is not a filing cabinet. The filename carries the period
+  // so a folder of them sorts correctly.
+
+  @Get('profit-loss.pdf')
+  @Roles(UserRole.MANAGER)
+  @ApiProduces('application/pdf')
+  @ApiQuery({ name: 'from', required: false })
+  @ApiQuery({ name: 'to', required: false })
+  @ApiOperation({ summary: 'Profit & loss as a signable PDF' })
+  async profitAndLossPdf(
+    @BusinessId() businessId: string,
+    @CurrentUser() user: RequestUser,
+    @Res() res: Response,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ): Promise<void> {
+    const { buffer, filename } = await this.pdf.profitAndLoss(businessId, user, from, to);
+    sendPdf(res, buffer, filename);
+  }
+
+  @Get('cash-up.pdf')
+  @ApiProduces('application/pdf')
+  @ApiQuery({ name: 'date', required: false })
+  @ApiOperation({ summary: 'Daily cash-up sheet as a PDF, with room to write the counted total' })
+  async cashUpPdf(
+    @BusinessId() businessId: string,
+    @CurrentUser() user: RequestUser,
+    @Res() res: Response,
+    @Query('date') date?: string,
+  ): Promise<void> {
+    const { buffer, filename } = await this.pdf.cashUp(businessId, user, date);
+    sendPdf(res, buffer, filename);
+  }
+
   @Get('sales-by-hour')
   @ApiQuery({ name: 'from', required: false })
   @ApiQuery({ name: 'to', required: false })
@@ -94,6 +136,15 @@ export class ReportsController {
     const { start, end } = resolveRange(from, to);
     return this.reports.salesByHour(businessId, start, end);
   }
+}
+
+function sendPdf(res: Response, buffer: Buffer, filename: string): void {
+  res.set({
+    'Content-Type': 'application/pdf',
+    'Content-Disposition': `attachment; filename="${filename}"`,
+    'Content-Length': buffer.length.toString(),
+  });
+  res.end(buffer);
 }
 
 /** Defaults to the last 30 days when the caller gives no range. */

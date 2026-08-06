@@ -161,7 +161,23 @@ would force several round trips. Two rules apply to every query here:
   then throws at runtime the first time it meets a BigInt operand.
 
 Endpoints: `dashboard` (cached 60s in Redis), `profit-loss`, `revenue-trend`,
-`top-products`, `dead-stock`, `sales-by-hour`, `cash-up`, `staff`.
+`top-products`, `dead-stock`, `sales-by-hour`, `cash-up`, `staff`, plus
+`profit-loss.pdf` and `cash-up.pdf`.
+
+The two PDF routes are gated on the `dataExport` plan feature and rendered by
+`report-pdf.service.ts` on top of `common/pdf/pdf-builder.ts` — a small layer
+over pdfkit that knows how to draw a table that paginates, a fill-in line, and a
+signature block. They exist because a shop asked for figures by a landlord, a
+co-operative, a loan officer or the RRA needs paper with a name on it, so every
+document states its period, who produced it, and carries signature blocks.
+
+The cash-up sheet is a **form**, not a report: the counted cash total is written
+on it by hand at the till before it is signed. A figure typed into a screen by
+the person holding the money is not a control. It is signed twice — by whoever
+counted, and by whoever took the money off them.
+
+Both read from the same `ReportsService` the screens use, so there is no second
+calculation of profit that could disagree with what the owner saw.
 
 **Revenue is recognised when the sale happens, not when the cash arrives.** That
 is what makes profit meaningful for a shop selling on credit; `cashCollected` is

@@ -21,6 +21,7 @@ import {
   todayIso,
 } from '../lib/format';
 import { Card, ErrorState, Input, PageHeader, PageLoader, StatTile } from '../components/ui';
+import { DownloadPdfButton } from '../components/DownloadPdfButton';
 import { useAuth } from '../store/auth';
 
 interface ProfitLoss {
@@ -76,7 +77,17 @@ export function Reports() {
 
   return (
     <div className="space-y-5">
-      <PageHeader title="Reports" subtitle="Where the money came from, and where it went." />
+      <PageHeader
+        title="Reports"
+        subtitle="Where the money came from, and where it went."
+        action={
+          <DownloadPdfButton
+            label="Download PDF"
+            path="/reports/profit-loss.pdf"
+            params={{ from, to }}
+          />
+        }
+      />
 
       <Card>
         <div className="flex flex-wrap items-end gap-3">
