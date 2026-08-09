@@ -9,6 +9,18 @@ rather than buried. Severity is my own judgement.
 
 ---
 
+## Fixed, and worth not regressing
+
+**Payments are checked for amount and currency, not just success.** Until it was
+found during payment setup, both settlement paths took `status === 'successful'`
+from Flutterwave's verify endpoint and credited the value we had *asked* for,
+never comparing it to what actually arrived. A successful payment of the wrong
+amount is still a successful payment, so 100 francs would have bought the
+20,000-franc plan, and an invoice could be marked paid by money the shop never
+received. `checkAmount` now refuses on a currency mismatch or any shortfall, and
+logs overpayment rather than silently pocketing it. If you touch
+`settleSubscription` or `settleInvoicePayment`, keep that call.
+
 ## What is done properly
 
 These are load-bearing and worth not breaking.

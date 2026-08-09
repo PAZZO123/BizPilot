@@ -17,7 +17,7 @@ import {
 import { PLANS, toGatewayAmount, type PlanId } from '@bizpilot/shared';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { EntitlementsService } from '../entitlements/entitlements.service';
-import { FlutterwaveService } from './flutterwave.service';
+import { FlutterwaveService, type VerifiedTransaction } from './flutterwave.service';
 
 /** How long a business keeps paid access after a failed renewal. */
 const GRACE_PERIOD_DAYS = 5;
@@ -252,17 +252,19 @@ export class BillingService {
 
     const kind = String(verified.meta?.kind ?? '');
     if (kind === 'subscription') {
-      return this.settleSubscription(verified.txRef, verified.id, verified.raw);
+      return this.settleSubscription(verified);
     }
     if (kind === 'invoice') {
-      return this.settleInvoicePayment(verified.txRef, verified.id, verified.raw);
+      return this.settleInvoicePayment(verified);
     }
 
     this.logger.warn(`Transaction ${verified.txRef} has no recognised kind; ignoring.`);
     return { settled: false, reason: 'Unrecognised payment type' };
   }
 
-  private async settleSubscription(reference: string, providerRef: string, raw: unknown) {
+  private async settleSubscription(verified: VerifiedTransaction) {
+    const { txRef: reference, id: providerRef, raw } = verified;
+
     return this.prisma.$transaction(async (tx) => {
       const transaction = await tx.billingTransaction.findUnique({
         where: { reference },
@@ -275,6 +277,15 @@ export class BillingService {
       // Already processed — a duplicate webhook, or the redirect beat it here.
       if (transaction.status === PaymentStatus.SUCCESSFUL) {
         return { settled: true, alreadyProcessed: true };
+      }
+
+      // A successful payment is not the same as the *right* payment. Without
+      // this, anything the gateway calls successful upgrades the plan — pay 100
+      // francs, get the 20,000-franc tier. Compare against what we asked for.
+      const mismatch = this.checkAmount(verified, transaction.amount, transaction.currency);
+      if (mismatch) {
+        this.logger.error(`Refusing to settle subscription ${reference}: ${mismatch}`);
+        return { settled: false, reason: mismatch };
       }
 
       const periodStart = new Date();
@@ -324,7 +335,9 @@ export class BillingService {
     });
   }
 
-  private async settleInvoicePayment(reference: string, providerRef: string, raw: unknown) {
+  private async settleInvoicePayment(verified: VerifiedTransaction) {
+    const { txRef: reference, id: providerRef, raw } = verified;
+
     return this.prisma.$transaction(async (tx) => {
       const payment = await tx.payment.findUnique({
         where: { reference },
@@ -336,6 +349,16 @@ export class BillingService {
       }
       if (payment.status === PaymentStatus.SUCCESSFUL) {
         return { settled: true, alreadyProcessed: true };
+      }
+
+      // Everything below credits `payment.amount` — the figure we invoiced, not
+      // the figure the gateway says arrived. If those disagree the shop would be
+      // told a debt was cleared by money it never received, so stop and let a
+      // human look rather than guess which number is right.
+      const mismatch = this.checkAmount(verified, payment.amount, payment.currency);
+      if (mismatch) {
+        this.logger.error(`Refusing to settle invoice payment ${reference}: ${mismatch}`);
+        return { settled: false, reason: mismatch };
       }
 
       await tx.payment.update({
@@ -386,6 +409,45 @@ export class BillingService {
 
       return { settled: true, amount: Number(payment.amount) };
     });
+  }
+
+  /**
+   * Confirms the payment that arrived is the payment we asked for.
+   *
+   * Flutterwave's verify endpoint tells us the amount and currency actually
+   * charged. Checking `status === 'successful'` and stopping there is the
+   * classic way to lose money: a successful payment of the wrong amount is
+   * still a successful payment, and the gateway will happily report it.
+   *
+   * Returns a reason string when something is wrong, or null when it is safe to
+   * credit. Overpayment is allowed through — the payer is out of pocket, not us,
+   * and refusing would strand their money — but it is logged, because it should
+   * not happen and usually means a price changed mid-checkout.
+   */
+  private checkAmount(
+    verified: VerifiedTransaction,
+    expectedMinor: bigint,
+    expectedCurrency: string,
+  ): string | null {
+    if (verified.currency.toUpperCase() !== expectedCurrency.toUpperCase()) {
+      return `expected ${expectedCurrency}, was paid ${verified.currency}`;
+    }
+
+    // Our side is minor units; the gateway's is major. Convert ours the same way
+    // the checkout did, so rounding cannot make an exact payment look short.
+    const expectedMajor = toGatewayAmount(Number(expectedMinor), expectedCurrency);
+    const paidMajor = verified.chargedAmount || verified.amount;
+
+    // A hair of tolerance for float representation, not for real shortfalls.
+    if (paidMajor + 0.001 < expectedMajor) {
+      return `expected ${expectedMajor} ${expectedCurrency}, was paid ${paidMajor}`;
+    }
+    if (paidMajor > expectedMajor + 0.001) {
+      this.logger.warn(
+        `Overpayment on ${verified.txRef}: expected ${expectedMajor} ${expectedCurrency}, received ${paidMajor}. Crediting as paid.`,
+      );
+    }
+    return null;
   }
 
   private async markFailed(reference: string): Promise<void> {
