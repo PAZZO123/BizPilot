@@ -122,9 +122,7 @@ export class AiService {
     } catch (error) {
       if (error instanceof BadRequestException) throw error;
       this.logger.error(`AI request failed: ${(error as Error).message}`);
-      throw new ServiceUnavailableException(
-        'The assistant is temporarily unavailable. Please try again in a moment.',
-      );
+      throw new ServiceUnavailableException(describeFailure(error));
     }
 
     if (!answer.trim()) {
@@ -243,4 +241,45 @@ export class AiService {
       'Which products are not selling?',
     ];
   }
+}
+
+/**
+ * Turns a failed Claude call into something worth showing a shopkeeper.
+ *
+ * The distinction that matters is *will waiting help*. "Try again in a moment"
+ * is fine for an overloaded API and a lie for an unpaid account — and a lie the
+ * person reading it cannot act on, so they retry forever while the real problem
+ * sits in someone else's billing page. Anything needing an operator says so.
+ *
+ * Deliberately vague about the specifics: which Anthropic plan the platform is
+ * on is nobody's business but the operator's, and the exact upstream error is
+ * already in the log with a request id.
+ */
+function describeFailure(error: unknown): string {
+  const status = (error as { status?: number }).status;
+  const raw = (error as Error)?.message ?? '';
+
+  // No credit / spend cap. The single most likely failure on a new key, and the
+  // one that never resolves on its own.
+  if (/credit balance|billing|quota|payment required/i.test(raw) || status === 402) {
+    return 'The assistant is switched off because the BizPilot account that pays for it needs topping up. Everything else keeps working — please let whoever runs BizPilot know.';
+  }
+
+  if (status === 401 || status === 403 || /authentication|api key|permission/i.test(raw)) {
+    return 'The assistant is not configured correctly. Everything else keeps working — please let whoever runs BizPilot know.';
+  }
+
+  // These genuinely do clear on their own.
+  if (status === 429 || /rate limit/i.test(raw)) {
+    return 'The assistant is busy right now. Wait a minute and ask again.';
+  }
+  if (status === 529 || (typeof status === 'number' && status >= 500)) {
+    return 'The assistant is temporarily unavailable. Please try again in a moment.';
+  }
+
+  if (/model/i.test(raw) && status === 404) {
+    return 'The assistant is set up with a model this account cannot use. Everything else keeps working — please let whoever runs BizPilot know.';
+  }
+
+  return 'The assistant could not answer that just now. Please try again in a moment.';
 }
