@@ -12,14 +12,22 @@ import { EntitlementsService } from '../entitlements/entitlements.service';
 import { paginated, type PaginationDto } from '../../common/dto/pagination.dto';
 import { AiToolsService } from './ai-tools.service';
 import type { AskDto } from './dto/ai.dto';
+import {
+  OpenAiCompatibleProvider,
+  type RunnableTool,
+} from './openai-compatible.provider';
 
 /** How many previous turns to replay. Enough for follow-ups, bounded for cost. */
 const HISTORY_TURNS = 12;
+
+/** A well-formed question needs two or three tool calls. Beyond this it is stuck. */
+const MAX_TOOL_STEPS = 8;
 
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
   private readonly client: Anthropic | null;
+  private readonly provider: 'anthropic' | 'openai-compatible';
   private readonly model: string;
   private readonly effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
@@ -28,21 +36,44 @@ export class AiService {
     private readonly config: ConfigService,
     private readonly entitlements: EntitlementsService,
     private readonly tools: AiToolsService,
+    private readonly compatible: OpenAiCompatibleProvider,
   ) {
+    this.provider = this.config.get<string>('AI_PROVIDER', 'anthropic') as
+      | 'anthropic'
+      | 'openai-compatible';
+
     const apiKey = this.config.get<string>('ANTHROPIC_API_KEY', '');
     // No key is a valid configuration — the rest of BizPilot works without AI,
     // and `ask` returns a clear message instead of a 500.
     this.client = apiKey ? new Anthropic({ apiKey }) : null;
-    this.model = this.config.get<string>('ANTHROPIC_MODEL', 'claude-opus-5');
+
+    // Each provider names its own model. Falling back to the Anthropic default
+    // when running on a free tier would send a Claude model id to Groq.
+    this.model =
+      this.provider === 'openai-compatible'
+        ? this.config.get<string>('AI_MODEL', '')
+        : this.config.get<string>('ANTHROPIC_MODEL', 'claude-opus-5');
     this.effort = this.config.get<'low'>('ANTHROPIC_EFFORT', 'low');
+
+    if (this.provider === 'openai-compatible') {
+      this.logger.log(`Assistant running on ${this.model} via ${this.config.get('AI_BASE_URL')}`);
+    }
   }
 
   get isConfigured(): boolean {
+    if (this.provider === 'openai-compatible') {
+      return Boolean(this.config.get<string>('AI_API_KEY', '') && this.model);
+    }
     return this.client !== null;
   }
 
   async ask(businessId: string, userId: string, dto: AskDto) {
-    if (!this.client) {
+    if (!this.isConfigured) {
+      throw new ServiceUnavailableException(
+        'The AI assistant is not switched on yet. Add an API key to enable it.',
+      );
+    }
+    if (this.provider === 'anthropic' && !this.client) {
       throw new ServiceUnavailableException(
         'The AI assistant is not switched on yet. Add an Anthropic API key to enable it.',
       );
@@ -89,34 +120,60 @@ export class AiService {
     let answer = '';
 
     try {
-      const runner = this.client.beta.messages.toolRunner({
-        model: this.model,
-        max_tokens: 16000,
-        system,
-        tools,
-        messages,
-        // The assistant reads small, already-summarised tool results and answers
-        // in plain language; deep reasoning is not what makes it good, and every
-        // thinking token is billed to a shop paying a few dollars a month.
-        output_config: { effort: this.effort },
-        // Cap the loop: a well-formed question needs two or three tool calls,
-        // and a runaway loop is a bill nobody authorised.
-        max_iterations: 8,
-      });
+      if (this.provider === 'openai-compatible') {
+        // Same tools, same system prompt, same tenant binding — only the service
+        // that reasons over them differs.
+        const result = await this.compatible.run(
+          {
+            baseUrl: this.config.get<string>('AI_BASE_URL', ''),
+            apiKey: this.config.get<string>('AI_API_KEY', ''),
+            model: this.model,
+            maxIterations: MAX_TOOL_STEPS,
+          },
+          system,
+          messages.map((message) => ({
+            role: message.role as 'user' | 'assistant',
+            content: String(message.content),
+          })),
+          tools as unknown as RunnableTool[],
+        );
 
-      for await (const message of runner) {
-        inputTokens += message.usage?.input_tokens ?? 0;
-        outputTokens += message.usage?.output_tokens ?? 0;
+        answer = result.answer;
+        result.toolsUsed.forEach((name) => toolsUsed.add(name));
+        inputTokens = result.inputTokens;
+        outputTokens = result.outputTokens;
+      } else {
+        // Guarded at the top of `ask`, but the compiler cannot see across that.
+        const client = this.client as Anthropic;
+        const runner = client.beta.messages.toolRunner({
+          model: this.model,
+          max_tokens: 16000,
+          system,
+          tools,
+          messages,
+          // The assistant reads small, already-summarised tool results and answers
+          // in plain language; deep reasoning is not what makes it good, and every
+          // thinking token is billed to a shop paying a few dollars a month.
+          output_config: { effort: this.effort },
+          // Cap the loop: a well-formed question needs two or three tool calls,
+          // and a runaway loop is a bill nobody authorised.
+          max_iterations: MAX_TOOL_STEPS,
+        });
 
-        for (const block of message.content) {
-          if (block.type === 'tool_use') toolsUsed.add(block.name);
-          if (block.type === 'text') answer = block.text;
-        }
+        for await (const message of runner) {
+          inputTokens += message.usage?.input_tokens ?? 0;
+          outputTokens += message.usage?.output_tokens ?? 0;
 
-        if (message.stop_reason === 'refusal') {
-          throw new BadRequestException(
-            'The assistant could not answer that question. Try rephrasing it.',
-          );
+          for (const block of message.content) {
+            if (block.type === 'tool_use') toolsUsed.add(block.name);
+            if (block.type === 'text') answer = block.text;
+          }
+
+          if (message.stop_reason === 'refusal') {
+            throw new BadRequestException(
+              'The assistant could not answer that question. Try rephrasing it.',
+            );
+          }
         }
       }
     } catch (error) {

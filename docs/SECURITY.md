@@ -9,6 +9,30 @@ rather than buried. Severity is my own judgement.
 
 ---
 
+## Read this before pointing the assistant at a free AI tier
+
+The assistant sends real business data to whichever model answers it: revenue,
+margins, what is in stock, and the names of customers who owe money. That is
+inherent — it is the entire point of the feature — but *who* receives it is a
+choice, and the free tiers are where it goes wrong.
+
+**Paid API tiers generally undertake not to train on what you send. Free tiers
+generally reserve the right to, and to have humans review it.** So the same
+question that is private on a paid plan becomes a contribution to someone's
+training corpus on a free one. The shop never agreed to that, and its customers
+certainly did not.
+
+Two consequences:
+
+- **Customer phone numbers are no longer sent to the model.** They were, in
+  `get_receivables`. They are a third party's personal data, the assistant does
+  not need one to answer "who owes me money", and the shopkeeper has the number
+  on the customer's own screen. Do not add them back.
+- **A free tier is fine for a demo and not fine for real shops.** If real
+  takings are in the database, either run on a paid tier whose terms forbid
+  training, or leave the assistant off. Everything else in BizPilot works
+  without it.
+
 ## Fixed, and worth not regressing
 
 **Payments are checked for amount and currency, not just success.** Until it was

@@ -200,7 +200,13 @@ export class AiToolsService {
               where: { businessId, deletedAt: null, balance: { gt: 0 } },
               orderBy: { balance: 'desc' },
               take: 20,
-              select: { name: true, phone: true, balance: true },
+              // Phone numbers are deliberately not sent to the model. They are
+              // a third party's personal data — the shop's customers never
+              // agreed to it leaving the shop — and the assistant does not need
+              // one to answer "who owes me money". The shopkeeper has the number
+              // on the customer's own screen. This matters most when the model
+              // is a free tier whose terms allow training on what you send it.
+              select: { name: true, balance: true },
             }),
             this.prisma.invoice.findMany({
               where: {
@@ -227,10 +233,7 @@ export class AiToolsService {
             const total = customers.reduce((acc, row) => acc + row.balance, 0n);
             lines.push(`Customers owing (${money(total)} in total):`);
             lines.push(
-              ...customers.map(
-                (row) =>
-                  `- ${row.name}${row.phone ? ` (${row.phone})` : ''}: ${money(row.balance)}`,
-              ),
+              ...customers.map((row) => `- ${row.name}: ${money(row.balance)}`),
             );
           }
           if (overdue.length) {

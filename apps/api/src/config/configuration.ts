@@ -57,6 +57,21 @@ const envSchema = z.object({
    *  to show gross margin on the platform dashboard. */
   AI_COST_PER_MESSAGE_RWF: z.coerce.number().nonnegative().default(1500),
 
+  /**
+   * Which service answers assistant questions.
+   *
+   * `anthropic` is the intended home. `openai-compatible` exists so the
+   * assistant can run on a free tier while the product has no revenue — it
+   * speaks the /chat/completions shape, which Groq, Google's Gemini
+   * compatibility endpoint, OpenRouter and Mistral all serve. Moving to Claude
+   * later is this one variable.
+   */
+  AI_PROVIDER: z.enum(['anthropic', 'openai-compatible']).default('anthropic'),
+  /** e.g. https://api.groq.com/openai/v1 */
+  AI_BASE_URL: z.string().optional().default(''),
+  AI_API_KEY: z.string().optional().default(''),
+  AI_MODEL: z.string().optional().default(''),
+
   ANTHROPIC_API_KEY: z.string().optional().default(''),
   ANTHROPIC_MODEL: z.string().default('claude-opus-5'),
   ANTHROPIC_EFFORT: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).default('low'),

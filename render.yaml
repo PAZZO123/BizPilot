@@ -117,6 +117,23 @@ services:
         sync: false
       - key: AI_COST_PER_MESSAGE_RWF
         value: '1500'
+      # Which service answers assistant questions. Unset means Anthropic.
+      #
+      # To run on a free tier instead, set all four in the dashboard:
+      #   AI_PROVIDER  openai-compatible
+      #   AI_BASE_URL  https://api.groq.com/openai/v1
+      #   AI_MODEL     llama-3.3-70b-versatile
+      #   AI_API_KEY   your key
+      # Moving to Claude later is deleting AI_PROVIDER. See docs/ROADMAP.md for
+      # what you give up in the meantime.
+      - key: AI_PROVIDER
+        sync: false
+      - key: AI_BASE_URL
+        sync: false
+      - key: AI_MODEL
+        sync: false
+      - key: AI_API_KEY
+        sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: ANTHROPIC_MODEL

@@ -319,6 +319,30 @@ unchanged, leaving a partial `dist/` and a `MODULE_NOT_FOUND` at runtime.
 
 ---
 
+### Running the assistant on something other than Claude
+
+`AI_PROVIDER` chooses who answers. Unset, it is Anthropic via the SDK's tool
+runner. Set to `openai-compatible`, the same nine tools and the same system
+prompt run against anything serving OpenAI's `/chat/completions` with tool
+calling — Groq, Google's Gemini compatibility endpoint, OpenRouter, Mistral,
+Together. One adapter, not one per vendor, because the goal is to run on
+whatever is free this month and move to Claude when the product pays for itself.
+
+`openai-compatible.provider.ts` holds the loop: send tools, execute what the
+model asks for, feed results back as `role: "tool"`, repeat to a cap of eight
+steps. Tool failures are reported *to the model* rather than thrown — a smaller
+model will sometimes send a malformed argument, and telling it so lets it
+correct itself instead of losing the question.
+
+The tenant binding is unchanged. Tools are still closures over one `businessId`,
+built before the model sees them, so a different provider cannot reach another
+shop's data.
+
+Two things are genuinely worse on a smaller model: it will sometimes answer from
+the conversation instead of calling a tool, and multi-step questions ("compare
+this month to last") fail more often. Read `docs/SECURITY.md` on what a free
+tier may do with the data before pointing one at a real shop.
+
 ## 6. Deploying
 
 Postgres runs on **Neon**, everything else on **Render**. The split exists
