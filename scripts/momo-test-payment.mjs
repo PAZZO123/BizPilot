@@ -17,9 +17,13 @@
 import { randomUUID } from 'node:crypto';
 
 const BASE = (process.env.MOMO_BASE_URL ?? 'https://sandbox.momodeveloper.mtn.com').replace(/\/$/, '');
-const SUBSCRIPTION_KEY = process.env.MOMO_SUBSCRIPTION_KEY;
-const API_USER = process.env.MOMO_API_USER;
-const API_KEY = process.env.MOMO_API_KEY;
+// Arguments first, environment second — setting env vars differs on every shell
+// and the failure looks identical to a wrong key. Order matches what
+// `momo:provision` prints: subscription key, api user, api key.
+const [argSubscription, argUser, argKey] = process.argv.slice(2);
+const SUBSCRIPTION_KEY = argSubscription ?? process.env.MOMO_SUBSCRIPTION_KEY;
+const API_USER = argUser ?? process.env.MOMO_API_USER;
+const API_KEY = argKey ?? process.env.MOMO_API_KEY;
 const TARGET = process.env.MOMO_TARGET_ENVIRONMENT ?? 'sandbox';
 
 // In the sandbox the payer number decides the outcome. This one always
@@ -30,11 +34,12 @@ const CURRENCY = TARGET === 'sandbox' ? 'EUR' : 'RWF';
 
 if (!SUBSCRIPTION_KEY || !API_USER || !API_KEY) {
   console.error(`
-Missing credentials. Set the three the provisioning script printed:
+Missing credentials. Pass the three the provisioning script printed, in that
+order — subscription key, api user, api key:
 
-  MOMO_SUBSCRIPTION_KEY=...  MOMO_API_USER=...  MOMO_API_KEY=...  npm run momo:test-payment
+  npm run momo:test-payment -- <subscription-key> <api-user> <api-key>
 
-Run \`npm run momo:provision\` first if you have not.
+Run \`npm run momo:provision -- <subscription-key>\` first if you have not.
 `);
   process.exit(1);
 }

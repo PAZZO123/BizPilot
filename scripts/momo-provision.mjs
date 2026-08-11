@@ -17,21 +17,27 @@
 import { randomUUID } from 'node:crypto';
 
 const BASE = process.env.MOMO_BASE_URL ?? 'https://sandbox.momodeveloper.mtn.com';
-const SUBSCRIPTION_KEY = process.env.MOMO_SUBSCRIPTION_KEY;
+// Accepted as an argument as well as an environment variable. Setting one of
+// those differs on every shell — `VAR=x cmd` in bash, `set VAR=x` in cmd (where
+// quotes silently become part of the value), `$env:VAR="x"` in PowerShell — and
+// getting it wrong looks exactly like a bad key. An argument works everywhere.
+const SUBSCRIPTION_KEY = process.argv[2] ?? process.env.MOMO_SUBSCRIPTION_KEY;
 // Only used so MTN has somewhere to call back; it is not contacted during setup.
 const CALLBACK_HOST = process.env.MOMO_CALLBACK_HOST ?? 'bizpilot-api-si8e.onrender.com';
 
 if (!SUBSCRIPTION_KEY) {
   console.error(`
-Missing MOMO_SUBSCRIPTION_KEY.
+Missing the subscription key.
 
   1. Sign up at https://momodeveloper.mtn.com (free, no verification)
   2. Products -> Collections -> Subscribe
-  3. Your profile shows a "Primary Key" — that is the subscription key
+     "Collections", not "Collection Widget" — different products, near-identical
+     keys, and the wrong one fails later with a 401 on the token call.
+  3. On your profile, click Show on the Collections "Primary key" and copy it
 
-Then run:
+Then, on any shell:
 
-  MOMO_SUBSCRIPTION_KEY=your-primary-key npm run momo:provision
+  npm run momo:provision -- your-primary-key
 `);
   process.exit(1);
 }

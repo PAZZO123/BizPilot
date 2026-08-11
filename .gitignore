@@ -14,3 +14,10 @@ apps/web/dist/
 *.tsbuildinfo
 .render/
 uploads/
+
+          
+     
+             
+             
+  MOMO_TARGET_ENVIRONMENT sandbox
+  MOMO_CALLBACK_SECRET    d5213860307548d4af925e2d26027625
