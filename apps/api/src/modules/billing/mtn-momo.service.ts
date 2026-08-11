@@ -266,11 +266,16 @@ export class MtnMomoService implements PaymentProvider {
     if (response.status !== 202) {
       const detail = await response.text().catch(() => '');
       this.logger.error(`MoMo ${path} failed: ${response.status} ${detail.slice(0, 300)}`);
-      throw new ServiceUnavailableException(
-        response.status === 409
-          ? 'That payment has already been requested.'
-          : 'Mobile money could not take that payment. Check the number and try again.',
-      );
+
+      if (response.status === 409) {
+        throw new ServiceUnavailableException('That payment has already been requested.');
+      }
+
+      // MTN's reason is a machine code — NOT_ENOUGH_FUNDS, PAYER_NOT_FOUND,
+      // INVALID_CURRENCY and so on. "Check the number and try again" is wrong
+      // advice for most of them and sends the payer chasing a fault that is not
+      // theirs, so say which one it was. Nothing in these bodies is secret.
+      throw new ServiceUnavailableException(explainMomoRejection(detail));
     }
   }
 
@@ -291,6 +296,49 @@ export class MtnMomoService implements PaymentProvider {
       throw new ServiceUnavailableException('Could not check the payment. Please try again.');
     }
     return response.json();
+  }
+}
+
+/**
+ * Turns MTN's rejection into something the person staring at the screen can act
+ * on.
+ *
+ * The API returns a code in the body — the useful part — and the generic
+ * "check the number" message was wrong for most of them: a payer with an empty
+ * wallet, a currency the environment does not settle, and a number that is not
+ * on MTN all got the same advice, and only one of them involves the number.
+ * Unrecognised codes are passed through rather than flattened, because the next
+ * unfamiliar one should still say something true.
+ */
+export function explainMomoRejection(body: string): string {
+  let code = '';
+  try {
+    code = String((JSON.parse(body) as { code?: string }).code ?? '');
+  } catch {
+    // Some errors come back as bare text, or as an empty body on a 500.
+    code = /[A-Z_]{6,}/.exec(body)?.[0] ?? '';
+  }
+
+  switch (code) {
+    case 'PAYER_NOT_FOUND':
+    case 'PAYEE_NOT_FOUND':
+      return 'That number is not registered for mobile money. Check it and try again.';
+    case 'NOT_ENOUGH_FUNDS':
+      return 'There is not enough money in that mobile money account.';
+    case 'PAYER_LIMIT_REACHED':
+      return 'That mobile money account has reached its limit for now.';
+    case 'INVALID_CURRENCY':
+      return 'Mobile money cannot take a payment in this currency. Tell the shop owner.';
+    case 'RESOURCE_ALREADY_EXIST':
+      return 'That payment has already been requested.';
+    case 'SERVICE_UNAVAILABLE':
+    case 'INTERNAL_PROCESSING_ERROR':
+      return 'Mobile money is not responding right now. Please try again in a moment.';
+    case '':
+      return 'Mobile money could not take that payment. Please try again.';
+    default:
+      // Readable enough to search for, and it is the only clue an operator has.
+      return `Mobile money refused the payment (${code}).`;
   }
 }
 

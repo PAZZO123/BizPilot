@@ -22,6 +22,7 @@
     "docs:docx": "node scripts/docs-to-docx.mjs",
     "momo:provision": "node scripts/momo-provision.mjs",
     "momo:test-payment": "node scripts/momo-test-payment.mjs",
+    "momo:diagnose": "node scripts/momo-diagnose.mjs",
     "lint": "npm run lint --workspaces --if-present",
     "test": "npm run test --workspaces --if-present"
   },
