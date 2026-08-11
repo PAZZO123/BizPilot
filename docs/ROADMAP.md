@@ -131,6 +131,41 @@ no unit tests, and the money helpers (`applyBps` rounding, `parseMoney`) are
 exactly the kind of pure functions that should have them. There are no frontend
 tests at all.
 
+## The payment provider is unresolved
+
+**Do not treat the Flutterwave integration as finished.** It is complete and
+correct as code — hosted checkout, verified amounts, idempotent settlement,
+signed webhooks — but it may be built on a provider that will not open a
+merchant account in Rwanda. Stripe was ruled out for exactly that reason and
+Flutterwave was chosen as the alternative; that choice was made from
+documentation, not from trying to sign up.
+
+`payment-provider.ts` is the seam. Settlement, entitlements and the billing
+tables are provider-agnostic; a new provider is one adapter.
+
+What still has to happen:
+
+1. **Confirm what will actually onboard you.** This can only be settled by
+   attempting it. Candidates worth trying: Pesapal, Elemipay, K-Pay, RwandaPay,
+   DusuPay, and MTN's own MoMo API.
+2. **Write the adapter.** The interface is documented and the settlement path
+   already checks amount and currency, so an adapter is roughly the size of
+   `flutterwave.service.ts`.
+3. **Build the PUSH screen.** This is the part that is genuinely missing rather
+   than merely unwritten. Mobile money does not redirect anywhere: you send a
+   prompt to a phone number and wait. That needs a phone-number field, a "check
+   your phone" state, and polling — none of which a redirect flow uses, and none
+   of which exists today. `CheckoutResult` is a union specifically so this
+   cannot be forgotten at compile time.
+
+MTN's sandbox is free and self-service with no business verification, so the
+PUSH flow can be built and demonstrated end to end before any commercial
+agreement exists. Production needs approval from MTN, which takes time — start
+it early.
+
+Given mobile money is around 90% of payments in Rwanda, PUSH is the flow that
+matters. Cards are the edge case here, not the default.
+
 **No CI.** Nothing runs the typecheck, the build or the smoke test on push. The
 first production deploy failed on something a five-second CI job would have
 caught, and the feedback loop was a ten-minute cloud build instead.
