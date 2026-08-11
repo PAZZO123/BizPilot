@@ -249,11 +249,20 @@ export class BillingService {
    * The single place a payment is confirmed, whether the news arrives by
    * webhook or by the browser coming back from the checkout page.
    *
-   * Both paths verify with Flutterwave and both are idempotent, so a webhook
+   * Both paths verify with the provider and both are idempotent, so a webhook
    * that arrives twice — or races the redirect — cannot double-credit anything.
    */
   async settleTransaction(transactionId: string | number) {
     const verified = await this.payments.verifyPayment(String(transactionId));
+
+    // Pending is not failed. A push payment is pending for as long as it takes
+    // the payer to find their phone and key in a PIN, and the waiting screen
+    // asks here every three seconds throughout — writing FAILED on the first
+    // answer would condemn a payment that is still perfectly alive, and leave a
+    // trail of failures in the shop's payment history for money that arrived.
+    if (verified.status === 'pending') {
+      return { settled: false, reason: 'Payment pending' };
+    }
 
     if (verified.status !== 'successful') {
       await this.markFailed(verified.reference);
