@@ -56,21 +56,46 @@ export class MtnMomoService implements PaymentProvider {
     this.baseUrl = this.config
       .get<string>('MOMO_BASE_URL', 'https://sandbox.momodeveloper.mtn.com')
       .replace(/\/$/, '');
-    this.subscriptionKey = this.config.get<string>('MOMO_SUBSCRIPTION_KEY', '');
-    this.apiUser = this.config.get<string>('MOMO_API_USER', '');
-    this.apiKey = this.config.get<string>('MOMO_API_KEY', '');
-    this.targetEnvironment = this.config.get<string>('MOMO_TARGET_ENVIRONMENT', 'sandbox');
-    this.callbackSecret = this.config.get<string>('MOMO_CALLBACK_SECRET', '');
+    // Trimmed because these are pasted by hand into a hosting dashboard, and a
+    // trailing space is invisible in every UI that shows them.
+    this.subscriptionKey = this.config.get<string>('MOMO_SUBSCRIPTION_KEY', '').trim();
+    this.apiUser = this.config.get<string>('MOMO_API_USER', '').trim();
+    this.apiKey = this.config.get<string>('MOMO_API_KEY', '').trim();
+    this.targetEnvironment = this.config
+      .get<string>('MOMO_TARGET_ENVIRONMENT', 'sandbox')
+      .trim()
+      .toLowerCase();
+    this.callbackSecret = this.config.get<string>('MOMO_CALLBACK_SECRET', '').trim();
+
+    // Printed at boot because the pairing of environment and currency is the
+    // thing that goes wrong, and it is otherwise invisible until a shopkeeper
+    // is standing in front of a failed upgrade.
+    if (this.isConfigured) {
+      this.logger.log(
+        `Target environment "${this.targetEnvironment}", settling in ${this.currency}` +
+          `${this.callbackSecret ? '' : ', no callback secret set'}.`,
+      );
+    }
   }
 
   get isConfigured(): boolean {
     return Boolean(this.subscriptionKey && this.apiUser && this.apiKey);
   }
 
-  /** Sandbox settles in EUR whatever you ask for; production uses the local
-   *  currency. Getting this wrong is a 400 that looks like a bad request body. */
+  /**
+   * Sandbox settles in EUR whatever you ask for; production uses the local
+   * currency. Getting this wrong is a 400 that looks like a bad request body.
+   *
+   * Derived from `isSandbox` rather than testing the raw string again. When
+   * these were two separate comparisons — `=== 'sandbox'` here and
+   * `!== 'production'` there — any third value split them apart: "Sandbox" with
+   * a capital S, or a trailing space, meant the request went to the sandbox
+   * asking to be settled in francs, which the sandbox does not do. Every
+   * checkout was rejected and the two lines that caused it each looked correct
+   * on its own.
+   */
   private get currency(): string {
-    return this.targetEnvironment === 'sandbox' ? 'EUR' : 'RWF';
+    return this.isSandbox ? 'EUR' : 'RWF';
   }
 
   /** Anything that is not literally MTN's production environment. Deliberately
