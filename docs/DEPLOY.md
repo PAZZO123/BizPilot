@@ -203,16 +203,66 @@ charge. The Platform dashboard shows an estimate; check it against a real
 Anthropic invoice in month one, and switch `ANTHROPIC_MODEL` to
 `claude-sonnet-5` if the numbers do not work.
 
-**Taking payments.** From the Flutterwave dashboard set `FLUTTERWAVE_PUBLIC_KEY`
-and `FLUTTERWAVE_SECRET_KEY`. Then invent a long random string, set it as
-`FLUTTERWAVE_WEBHOOK_HASH`, and paste the same value into Flutterwave →
-Settings → Webhooks → *Secret hash*. Point their webhook URL at:
+### Taking payments — MoMo, bank transfer and card
 
-```
-https://bizpilot-api.onrender.com/api/webhooks/flutterwave
-```
+The integration is finished and already offers all three in Rwanda
+(`card,mobilemoneyrwanda,banktransfer`). What follows is switching it on.
 
-Use the **test** keys until you have taken a real order end to end.
+**What costs nothing:** the Flutterwave account, test mode, and this entire
+setup. There is no monthly fee and no setup fee, and test mode is unlimited —
+you can demonstrate a customer paying an invoice by MoMo today, for nothing.
+
+**What is not free, and cannot be:** every payment processor takes a percentage
+of each transaction. That is how they exist. The important part is *when* you
+pay it — it comes out of money arriving, never out of your pocket, so there is
+no cost before there is revenue. Check Flutterwave's current Rwanda rates
+yourself; they differ by channel, and mobile money is usually cheaper than card.
+
+#### Test mode — do this now, free
+
+1. Sign up at flutterwave.com. Dashboard → **Settings → API Keys**, and switch
+   the dashboard to **Test mode**. Test keys are issued immediately, with no
+   verification.
+2. Generate a webhook secret of your own:
+
+   ```bash
+   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+   ```
+
+3. On `bizpilot-api` → Environment, add three variables:
+
+   | Key | Value |
+   |---|---|
+   | `FLUTTERWAVE_PUBLIC_KEY` | test public key |
+   | `FLUTTERWAVE_SECRET_KEY` | test secret key |
+   | `FLUTTERWAVE_WEBHOOK_HASH` | the string from step 2 |
+
+4. Flutterwave → **Settings → Webhooks**:
+   - URL: `https://bizpilot-api-si8e.onrender.com/api/webhooks/flutterwave`
+   - Secret hash: **the same string as `FLUTTERWAVE_WEBHOOK_HASH`**
+
+   They must match exactly. A missing or wrong hash means every webhook is
+   rejected — which is the correct failure, since an unauthenticated webhook can
+   credit a subscription.
+
+5. Confirm it took: `paymentsConfigured` on `GET /api/billing` flips to `true`,
+   and the amber warning disappears from Plan & billing.
+
+Then send yourself an invoice, open its public link, and pay it with
+Flutterwave's test credentials. The invoice should move to PAID, the customer's
+balance drop, and the originating sale settle — all driven by the webhook, not
+by the browser coming back.
+
+#### Going live
+
+Live keys need business verification: identity, business registration, and the
+bank account for settlement. Free to submit, but it takes days and is the real
+gate — do it well before you need it, not the week you launch.
+
+Swap the two keys for the live pair when it clears. Nothing else changes.
+
+> **Do not skip test mode.** The settlement path credits plans and clears
+> customer debts. Watch it work on money that is not real first.
 
 **Real SMS.** Get an Africa's Talking account, set `AFRICASTALKING_USERNAME` and
 `AFRICASTALKING_API_KEY`, and change `SMS_PROVIDER` from `log` to
