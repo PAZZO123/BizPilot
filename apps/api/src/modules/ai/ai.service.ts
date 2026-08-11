@@ -316,19 +316,37 @@ function describeFailure(error: unknown): string {
   const status = (error as { status?: number }).status;
   const raw = (error as Error)?.message ?? '';
 
-  // No credit / spend cap. The single most likely failure on a new key, and the
-  // one that never resolves on its own.
-  if (/credit balance|billing|quota|payment required/i.test(raw) || status === 402) {
+  // Status first, message second. Providers put help links in their errors, and
+  // Groq's rate-limit response ends with an upgrade URL containing the word
+  // "billing" — matching on text before status reported a paid-up account as
+  // out of credit, and told the shopkeeper to go and find someone about it.
+  if (status === 429) {
+    return 'The assistant is busy right now. Wait a minute and ask again.';
+  }
+  if (status === 402) {
     return 'The assistant is switched off because the BizPilot account that pays for it needs topping up. Everything else keeps working — please let whoever runs BizPilot know.';
   }
-
-  if (status === 401 || status === 403 || /authentication|api key|permission/i.test(raw)) {
+  if (status === 401 || status === 403) {
     return 'The assistant is not configured correctly. Everything else keeps working — please let whoever runs BizPilot know.';
   }
 
-  // These genuinely do clear on their own.
-  if (status === 429 || /rate limit/i.test(raw)) {
+  // Only now fall back to reading the text, for providers that report a real
+  // problem with a 400. "credit balance" is Anthropic's exact wording; the
+  // looser words that used to be here matched too much.
+  if (/credit balance|insufficient (?:credit|funds)|payment required/i.test(raw)) {
+    return 'The assistant is switched off because the BizPilot account that pays for it needs topping up. Everything else keeps working — please let whoever runs BizPilot know.';
+  }
+  if (/authentication|invalid api key|permission denied/i.test(raw)) {
+    return 'The assistant is not configured correctly. Everything else keeps working — please let whoever runs BizPilot know.';
+  }
+  if (/rate limit/i.test(raw)) {
     return 'The assistant is busy right now. Wait a minute and ask again.';
+  }
+
+  // A smaller model that cannot produce a valid tool call. Not the shopkeeper's
+  // fault, but rephrasing genuinely helps, unlike waiting.
+  if (/failed to call a function|tool call validation/i.test(raw)) {
+    return 'The assistant could not work out how to answer that. Try asking it more simply.';
   }
   if (status === 529 || (typeof status === 'number' && status >= 500)) {
     return 'The assistant is temporarily unavailable. Please try again in a moment.';

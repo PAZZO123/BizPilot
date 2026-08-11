@@ -19,6 +19,60 @@ import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common'
  * is a dependency to keep updated for no benefit.
  */
 
+/**
+ * Nudges argument values to the types the schema declares.
+ *
+ * Smaller models send `{"limit": "10"}` where the schema says number, and the
+ * provider rejects the whole call before it reaches us — the question is lost
+ * over a pair of quotes. Coercing is safe here because the schemas are ours and
+ * describe scalars only; anything that does not convert cleanly is left alone
+ * for the tool to reject on its own terms.
+ */
+function coerceToSchema(args: Record<string, unknown>, schema: unknown): Record<string, unknown> {
+  const properties = (schema as { properties?: Record<string, { type?: string }> })?.properties;
+  if (!properties) return args;
+
+  const out: Record<string, unknown> = { ...args };
+  for (const [key, spec] of Object.entries(properties)) {
+    const value = out[key];
+    if (typeof value !== 'string') continue;
+
+    if (spec?.type === 'number' || spec?.type === 'integer') {
+      const asNumber = Number(value);
+      if (value.trim() !== '' && Number.isFinite(asNumber)) out[key] = asNumber;
+    } else if (spec?.type === 'boolean') {
+      if (value === 'true') out[key] = true;
+      if (value === 'false') out[key] = false;
+    }
+  }
+  return out;
+}
+
+/**
+ * Widens numeric parameters to accept a string as well.
+ *
+ * Coercing on our side is not enough on its own: Groq validates the model's
+ * generated call against the schema we sent and rejects it before we ever see
+ * it — "expected number, but got string" loses the whole question over a pair
+ * of quotes a small model added. Declaring both types lets the call through,
+ * and `coerceToSchema` then turns it into the number the tool expects.
+ *
+ * Only applied on this path. The schema Claude receives stays strict.
+ */
+function relaxSchema(schema: unknown): unknown {
+  const source = schema as { properties?: Record<string, { type?: string }> } | null;
+  if (!source?.properties) return schema;
+
+  const properties: Record<string, unknown> = {};
+  for (const [key, spec] of Object.entries(source.properties)) {
+    properties[key] =
+      spec?.type === 'number' || spec?.type === 'integer'
+        ? { ...spec, type: [spec.type, 'string'] }
+        : spec;
+  }
+  return { ...source, properties };
+}
+
 /** The subset of a `betaTool` we need. The same objects serve both providers. */
 export interface RunnableTool {
   name: string;
@@ -79,7 +133,7 @@ export class OpenAiCompatibleProvider {
       function: {
         name: tool.name,
         description: tool.description ?? '',
-        parameters: tool.input_schema,
+        parameters: relaxSchema(tool.input_schema),
       },
     }));
 
@@ -149,15 +203,23 @@ export class OpenAiCompatibleProvider {
 
     let args: Record<string, unknown> = {};
     if (call.function.arguments?.trim()) {
+      let parsed: unknown;
       try {
-        args = JSON.parse(call.function.arguments) as Record<string, unknown>;
+        parsed = JSON.parse(call.function.arguments);
       } catch {
         return 'Error: the arguments were not valid JSON. Call the tool again with valid JSON.';
       }
+      // A tool taking no arguments is often called with the literal `null`,
+      // which parses fine and then explodes the moment the tool destructures
+      // it. An absent argument object means an empty one, not a null one.
+      args =
+        parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+          ? (parsed as Record<string, unknown>)
+          : {};
     }
 
     try {
-      const result = await tool.run(args);
+      const result = await tool.run(coerceToSchema(args, tool.input_schema));
       return typeof result === 'string' ? result : JSON.stringify(result);
     } catch (error) {
       this.logger.error(`Tool ${call.function.name} failed: ${(error as Error).message}`);
