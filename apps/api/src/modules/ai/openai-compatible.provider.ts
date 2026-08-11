@@ -48,6 +48,39 @@ function coerceToSchema(args: Record<string, unknown>, schema: unknown): Record<
   return out;
 }
 
+/** Longest we will silently hold a shopkeeper waiting before telling them. */
+const MAX_RETRY_WAIT_MS = 12_000;
+
+/**
+ * How long to wait before retrying, or null if retrying is pointless.
+ *
+ * Prefers the `retry-after` header; falls back to the wait the provider quotes
+ * in its message ("Please try again in 845ms"), which Groq gives and the header
+ * sometimes rounds up to a whole second.
+ */
+function retryDelayMs(error: unknown): number | null {
+  const { status, retryAfter, message } = error as {
+    status?: number;
+    retryAfter?: string | null;
+    message?: string;
+  };
+  if (status !== 429) return null;
+
+  const fromMessage = /try again in ([\d.]+)\s*(ms|s)\b/i.exec(message ?? '');
+  if (fromMessage) {
+    const value = Number(fromMessage[1]);
+    const ms = fromMessage[2].toLowerCase() === 'ms' ? value : value * 1000;
+    // A little headroom: the quoted figure is when the window clears, exactly.
+    return ms <= MAX_RETRY_WAIT_MS ? Math.ceil(ms) + 250 : null;
+  }
+
+  const seconds = Number(retryAfter);
+  if (Number.isFinite(seconds) && seconds * 1000 <= MAX_RETRY_WAIT_MS) {
+    return Math.ceil(seconds * 1000) + 250;
+  }
+  return null;
+}
+
 /**
  * Widens numeric parameters to accept a string as well.
  *
@@ -227,7 +260,36 @@ export class OpenAiCompatibleProvider {
     }
   }
 
+  /**
+   * One request, with a single retry when the provider says to wait.
+   *
+   * A rate-limited provider tells you exactly how long to hold off — often
+   * under a second. Surfacing that to a shopkeeper as a failure they have to
+   * retry by hand, when the fix is to pause for 900ms, is throwing away an
+   * answer we could simply have waited for. Only once, and only for a short
+   * wait: past that they should be told, not left watching a spinner.
+   */
   private async complete(
+    config: OpenAiCompatibleConfig,
+    messages: ChatMessage[],
+    tools: unknown[],
+  ): Promise<{
+    choices?: { message?: ChatMessage }[];
+    usage?: { prompt_tokens?: number; completion_tokens?: number };
+  }> {
+    try {
+      return await this.attempt(config, messages, tools);
+    } catch (error) {
+      const wait = retryDelayMs(error);
+      if (wait === null) throw error;
+
+      this.logger.warn(`Rate limited; waiting ${wait}ms and retrying once.`);
+      await new Promise((resolve) => setTimeout(resolve, wait));
+      return this.attempt(config, messages, tools);
+    }
+  }
+
+  private async attempt(
     config: OpenAiCompatibleConfig,
     messages: ChatMessage[],
     tools: unknown[],
@@ -248,7 +310,12 @@ export class OpenAiCompatibleProvider {
           messages,
           tools,
           tool_choice: 'auto',
-          max_tokens: 2048,
+          // Deliberately small. Providers reserve max_tokens against your
+          // tokens-per-minute budget whether the model uses them or not, so
+          // 2048 was booking 2048 tokens per call to write three sentences —
+          // and rate-limiting the user out of their second question. The
+          // answers here are short by design; the tools do the summarising.
+          max_tokens: 700,
         }),
         // Free tiers queue. Generous, but not forever — a shopkeeper is waiting.
         signal: AbortSignal.timeout(60_000),
@@ -266,8 +333,9 @@ export class OpenAiCompatibleProvider {
       // it — the status is preserved for the rate-limit and billing branches.
       const error = new Error(
         `${response.status} ${payload?.error?.message ?? 'request failed'}`,
-      ) as Error & { status?: number };
+      ) as Error & { status?: number; retryAfter?: string | null };
       error.status = response.status;
+      error.retryAfter = response.headers.get('retry-after');
       throw error;
     }
 

@@ -20,6 +20,16 @@ import {
 /** How many previous turns to replay. Enough for follow-ups, bounded for cost. */
 const HISTORY_TURNS = 12;
 
+/**
+ * Fewer turns on a free tier.
+ *
+ * History is re-sent in full on every step of the tool loop, so a long
+ * conversation makes each question progressively more expensive — and on a
+ * tokens-per-minute budget that shows up as the user being locked out of their
+ * own follow-up. Four turns still carries "and last month?" through.
+ */
+const FREE_TIER_HISTORY_TURNS = 4;
+
 /** A well-formed question needs two or three tool calls. Beyond this it is stuck. */
 const MAX_TOOL_STEPS = 8;
 
@@ -95,7 +105,7 @@ export class AiService {
     const history = await this.prisma.aiMessage.findMany({
       where: { conversationId: conversation.id },
       orderBy: { createdAt: 'desc' },
-      take: HISTORY_TURNS,
+      take: this.provider === 'openai-compatible' ? FREE_TIER_HISTORY_TURNS : HISTORY_TURNS,
       select: { role: true, content: true },
     });
 
