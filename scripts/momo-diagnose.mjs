@@ -84,7 +84,7 @@ const { access_token: token } = await tokenResponse.json();
 console.log('ok\n');
 
 /** One Request to Pay. Returns MTN's status and body verbatim. */
-async function probe({ label, phone, amount, callback }) {
+async function probe({ label, phone, amount, callback, currency = CURRENCY }) {
   const reference = randomUUID();
   const response = await fetch(`${BASE}/collection/v1_0/requesttopay`, {
     method: 'POST',
@@ -98,7 +98,7 @@ async function probe({ label, phone, amount, callback }) {
     },
     body: JSON.stringify({
       amount,
-      currency: CURRENCY,
+      currency,
       externalId: reference,
       payer: { partyIdType: 'MSISDN', partyId: phone },
       payerMessage: 'BizPilot diagnostic',
@@ -109,7 +109,7 @@ async function probe({ label, phone, amount, callback }) {
   const body = await response.text().catch(() => '');
   const ok = response.status === 202;
   console.log(`${ok ? 'ACCEPTED' : 'REJECTED'}  ${label}`);
-  console.log(`          ${amount} ${CURRENCY} to ${phone}${callback ? ' + callback url' : ''}`);
+  console.log(`          ${amount} ${currency} to ${phone}${callback ? ' + callback url' : ''}`);
   if (!ok) console.log(`          MTN said: ${response.status} ${body.slice(0, 400) || '(empty body)'}`);
   console.log();
   return ok;
@@ -135,8 +135,65 @@ results.push([
   await probe({ label: 'with the callback url — the full checkout request', phone: REAL_PHONE, amount: REAL_AMOUNT, callback: true }),
 ]);
 
+// Two questions the probes above cannot answer, asked separately because a
+// rejection here is informative rather than a fault.
+console.log('--- and two open questions ---\n');
+
+// Does the sandbox settle francs? The adapter assumes not and substitutes EUR
+// for test runs only. If this is ACCEPTED the substitution is unnecessary.
+const rwfAccepted = await probe({
+  label: 'the sandbox asked to settle in RWF',
+  phone: REAL_PHONE,
+  amount: REAL_AMOUNT,
+  callback: false,
+  currency: 'RWF',
+});
+
+// MTN checks the callback URL's host against the providerCallbackHost that was
+// registered when the API user was created. If a mismatch is rejected, then an
+// API_URL on the server that does not match what provisioning registered breaks
+// every checkout while every local probe passes.
+const wrongHostReference = randomUUID();
+const wrongHostResponse = await fetch(`${BASE}/collection/v1_0/requesttopay`, {
+  method: 'POST',
+  headers: {
+    Authorization: `Bearer ${token}`,
+    'X-Reference-Id': wrongHostReference,
+    'X-Target-Environment': TARGET,
+    'Ocp-Apim-Subscription-Key': SUBSCRIPTION_KEY,
+    'Content-Type': 'application/json',
+    'X-Callback-Url': 'https://not-the-registered-host.example.com/api/webhooks/momo/probe',
+  },
+  body: JSON.stringify({
+    amount: REAL_AMOUNT,
+    currency: CURRENCY,
+    externalId: wrongHostReference,
+    payer: { partyIdType: 'MSISDN', partyId: REAL_PHONE },
+    payerMessage: 'BizPilot diagnostic',
+    payeeNote: 'BizPilot diagnostic',
+  }),
+});
+const wrongHostBody = await wrongHostResponse.text().catch(() => '');
+const wrongHostAccepted = wrongHostResponse.status === 202;
+console.log(`${wrongHostAccepted ? 'ACCEPTED' : 'REJECTED'}  a callback url on the wrong host`);
+if (!wrongHostAccepted) {
+  console.log(`          MTN said: ${wrongHostResponse.status} ${wrongHostBody.slice(0, 400) || '(empty body)'}`);
+}
+console.log();
+
 const firstFailure = results.find(([, ok]) => !ok);
 console.log('---');
+console.log(
+  rwfAccepted
+    ? 'The sandbox DOES settle RWF — the EUR substitution can be dropped.'
+    : 'The sandbox will not settle RWF, so test runs have to use EUR. Production is unaffected.',
+);
+console.log(
+  wrongHostAccepted
+    ? 'MTN does not check the callback host, so API_URL cannot be the cause.'
+    : 'MTN DOES check the callback host — an API_URL that does not match what was registered breaks every checkout.',
+);
+console.log();
 if (!firstFailure) {
   console.log('Every probe was accepted. MTN is not rejecting the request shape, so the');
   console.log('difference is in the environment — check MOMO_TARGET_ENVIRONMENT and');

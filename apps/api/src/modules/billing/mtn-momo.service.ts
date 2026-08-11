@@ -71,9 +71,22 @@ export class MtnMomoService implements PaymentProvider {
     // thing that goes wrong, and it is otherwise invisible until a shopkeeper
     // is standing in front of a failed upgrade.
     if (this.isConfigured) {
+      // The host — never the path, which carries the callback secret. MTN
+      // checks this against the providerCallbackHost registered when the API
+      // user was created, so a mismatch here breaks every payment while every
+      // local test passes.
+      const callbackHost = (() => {
+        try {
+          return new URL(this.config.get<string>('API_URL', '')).host;
+        } catch {
+          return 'unset';
+        }
+      })();
+
       this.logger.log(
-        `Target environment "${this.targetEnvironment}", settling in ${this.currency}` +
-          `${this.callbackSecret ? '' : ', no callback secret set'}.`,
+        `Target environment "${this.targetEnvironment}", settling in ${this.currency}, ` +
+          `callbacks to ${callbackHost}` +
+          `${this.callbackSecret ? '' : ' (no callback secret set)'}.`,
       );
     }
   }
