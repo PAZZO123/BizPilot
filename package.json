@@ -20,6 +20,7 @@
     "db:seed": "npm run db:seed --workspace=apps/api",
     "db:studio": "npm run db:studio --workspace=apps/api",
     "docs:docx": "node scripts/docs-to-docx.mjs",
+    "momo:provision": "node scripts/momo-provision.mjs",
     "lint": "npm run lint --workspaces --if-present",
     "test": "npm run test --workspaces --if-present"
   },

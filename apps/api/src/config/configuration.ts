@@ -76,6 +76,26 @@ const envSchema = z.object({
   ANTHROPIC_MODEL: z.string().default('claude-opus-5'),
   ANTHROPIC_EFFORT: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).default('low'),
 
+  /**
+   * MTN Mobile Money — Collections.
+   *
+   * The sandbox is self-service and free, so this can be built and demonstrated
+   * before any commercial agreement with MTN exists. Moving to production means
+   * new credentials and MOMO_TARGET_ENVIRONMENT, not new code.
+   *
+   * MOMO_API_USER / MOMO_API_KEY are created once against the developer portal;
+   * `npm run momo:provision` does it. MOMO_CALLBACK_SECRET is a random string of
+   * your own — it sits in the callback URL path, because MTN does not sign
+   * callbacks.
+   */
+  MOMO_BASE_URL: z.string().default('https://sandbox.momodeveloper.mtn.com'),
+  MOMO_SUBSCRIPTION_KEY: z.string().optional().default(''),
+  MOMO_API_USER: z.string().optional().default(''),
+  MOMO_API_KEY: z.string().optional().default(''),
+  /** `sandbox` while testing; MTN gives you the production value. */
+  MOMO_TARGET_ENVIRONMENT: z.string().default('sandbox'),
+  MOMO_CALLBACK_SECRET: z.string().optional().default(''),
+
   FLUTTERWAVE_PUBLIC_KEY: z.string().optional().default(''),
   FLUTTERWAVE_SECRET_KEY: z.string().optional().default(''),
   FLUTTERWAVE_WEBHOOK_HASH: z.string().optional().default(''),
