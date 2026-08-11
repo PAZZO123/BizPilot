@@ -77,6 +77,13 @@ const envSchema = z.object({
   ANTHROPIC_EFFORT: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).default('low'),
 
   /**
+   * Which provider takes payments. `mtn-momo` pushes a prompt to a phone;
+   * `flutterwave` redirects to a hosted page. They are not interchangeable from
+   * the user's point of view — see payment-provider.ts.
+   */
+  PAYMENT_PROVIDER: z.enum(['flutterwave', 'mtn-momo']).default('flutterwave'),
+
+  /**
    * MTN Mobile Money — Collections.
    *
    * The sandbox is self-service and free, so this can be built and demonstrated

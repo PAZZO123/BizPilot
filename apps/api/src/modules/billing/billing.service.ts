@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -17,7 +18,11 @@ import {
 import { PLANS, toGatewayAmount, type PlanId } from '@bizpilot/shared';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { EntitlementsService } from '../entitlements/entitlements.service';
-import { FlutterwaveService, type VerifiedTransaction } from './flutterwave.service';
+import {
+  PAYMENT_PROVIDER,
+  type PaymentProvider,
+  type VerifiedPayment,
+} from './payment-provider';
 
 /** How long a business keeps paid access after a failed renewal. */
 const GRACE_PERIOD_DAYS = 5;
@@ -29,7 +34,7 @@ export class BillingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
-    private readonly flutterwave: FlutterwaveService,
+    @Inject(PAYMENT_PROVIDER) private readonly payments: PaymentProvider,
     private readonly entitlements: EntitlementsService,
   ) {}
 
@@ -70,7 +75,7 @@ export class BillingService {
       update: {},
     });
 
-    const reference = this.flutterwave.buildReference('bp-sub');
+    const reference = this.payments.buildReference('bp-sub');
 
     await this.prisma.billingTransaction.create({
       data: {
@@ -83,11 +88,11 @@ export class BillingService {
       },
     });
 
-    const { link } = await this.flutterwave.createCheckout({
-      txRef: reference,
+    const checkout = await this.payments.createCheckout({
+      reference,
       amount: toGatewayAmount(Number(amountMinor), currency),
       currency,
-      redirectUrl: `${this.config.get<string>('WEB_URL')}/billing/callback`,
+      returnUrl: `${this.config.get<string>('WEB_URL')}/billing/callback`,
       customer: {
         email: user.email,
         name: user.name,
@@ -96,10 +101,11 @@ export class BillingService {
       title: 'BizPilot subscription',
       description: `${definition.name} plan — ${business.name}`,
       meta: { kind: 'subscription', businessId, plan },
-      paymentOptions: useLocal ? 'card,mobilemoneyrwanda,banktransfer' : 'card',
     });
 
-    return { checkoutUrl: link, reference, amount: Number(amountMinor), currency };
+    // `checkout` is a union: a redirect carries a url, a push carries the number
+    // it was sent to. The caller has to look at `kind` — which is the point.
+    return { checkout, reference, amount: Number(amountMinor), currency };
   }
 
   /** Current subscription, plan limits and payment history. */
@@ -130,7 +136,11 @@ export class BillingService {
     return {
       ...entitlements,
       subscription,
-      paymentsConfigured: this.flutterwave.isConfigured,
+      paymentsConfigured: this.payments.isConfigured,
+      // The screen needs both: which channels to advertise, and whether to
+      // expect a redirect or a phone prompt.
+      paymentProvider: this.payments.name,
+      paymentChannels: this.payments.channels,
     };
   }
 
@@ -196,7 +206,7 @@ export class BillingService {
       throw new BadRequestException('This invoice is already paid in full.');
     }
 
-    const reference = this.flutterwave.buildReference('bp-inv');
+    const reference = this.payments.buildReference('bp-inv');
 
     await this.prisma.payment.create({
       data: {
@@ -207,16 +217,18 @@ export class BillingService {
         currency: invoice.business.currency,
         method: PaymentMethod.MOMO,
         status: PaymentStatus.PENDING,
-        provider: 'flutterwave',
+        // Whoever is actually taking the money — reconciling a MoMo payment
+        // against a row labelled "flutterwave" is a bad afternoon.
+        provider: this.payments.name,
         reference,
       },
     });
 
-    const { link } = await this.flutterwave.createCheckout({
-      txRef: reference,
+    const checkout = await this.payments.createCheckout({
+      reference,
       amount: toGatewayAmount(Number(balanceDue), invoice.business.currency),
       currency: invoice.business.currency,
-      redirectUrl: `${this.config.get<string>('WEB_URL')}/pay/${token}/callback`,
+      returnUrl: `${this.config.get<string>('WEB_URL')}/pay/${token}/callback`,
       customer: {
         email: payer.email || invoice.customer?.email || 'customer@bizpilot.app',
         name: payer.name ?? invoice.customer?.name,
@@ -224,13 +236,11 @@ export class BillingService {
       },
       title: invoice.business.name,
       description: `Invoice ${invoice.number}`,
-      logo: invoice.business.logoUrl ?? undefined,
+      logoUrl: invoice.business.logoUrl ?? undefined,
       meta: { kind: 'invoice', invoiceId: invoice.id, businessId: invoice.businessId },
-      paymentOptions:
-        invoice.business.currency === 'RWF' ? 'card,mobilemoneyrwanda,banktransfer' : 'card',
     });
 
-    return { checkoutUrl: link, reference, amount: Number(balanceDue) };
+    return { checkout, reference, amount: Number(balanceDue) };
   }
 
   // --- Settlement ----------------------------------------------------------
@@ -243,14 +253,14 @@ export class BillingService {
    * that arrives twice — or races the redirect — cannot double-credit anything.
    */
   async settleTransaction(transactionId: string | number) {
-    const verified = await this.flutterwave.verifyTransaction(transactionId);
+    const verified = await this.payments.verifyPayment(String(transactionId));
 
     if (verified.status !== 'successful') {
-      await this.markFailed(verified.txRef);
+      await this.markFailed(verified.reference);
       return { settled: false, reason: `Payment ${verified.status}` };
     }
 
-    const kind = String(verified.meta?.kind ?? '');
+    const kind = String(verified.meta?.kind ?? '') || (await this.resolveKind(verified.reference));
     if (kind === 'subscription') {
       return this.settleSubscription(verified);
     }
@@ -258,12 +268,39 @@ export class BillingService {
       return this.settleInvoicePayment(verified);
     }
 
-    this.logger.warn(`Transaction ${verified.txRef} has no recognised kind; ignoring.`);
+    this.logger.warn(`Transaction ${verified.reference} has no recognised kind; ignoring.`);
     return { settled: false, reason: 'Unrecognised payment type' };
   }
 
-  private async settleSubscription(verified: VerifiedTransaction) {
-    const { txRef: reference, id: providerRef, raw } = verified;
+  /**
+   * Works out what a payment was for when the provider does not hand our
+   * metadata back.
+   *
+   * Flutterwave echoes `meta` on verification, so the kind rides along with the
+   * payment. MTN has nowhere to put it — Request to Pay carries an amount, a
+   * phone number and two short strings shown on the handset, and none of them
+   * survive as structured data. Reading `meta.kind` and giving up when it is
+   * missing meant no MoMo payment could ever settle: money would leave the
+   * payer's wallet and the plan would stay unpaid.
+   *
+   * So fall back to the one thing every provider does preserve — our own
+   * reference — and ask our own database what we created it for. A subscription
+   * attempt writes a billingTransaction; an invoice payment writes a payment.
+   * Both are keyed by reference, so exactly one of them can match.
+   */
+  private async resolveKind(reference: string): Promise<'subscription' | 'invoice' | ''> {
+    const [subscriptionAttempt, invoiceAttempt] = await Promise.all([
+      this.prisma.billingTransaction.findUnique({ where: { reference }, select: { id: true } }),
+      this.prisma.payment.findUnique({ where: { reference }, select: { id: true } }),
+    ]);
+
+    if (subscriptionAttempt) return 'subscription';
+    if (invoiceAttempt) return 'invoice';
+    return '';
+  }
+
+  private async settleSubscription(verified: VerifiedPayment) {
+    const { reference, providerRef, raw } = verified;
 
     return this.prisma.$transaction(async (tx) => {
       const transaction = await tx.billingTransaction.findUnique({
@@ -335,8 +372,8 @@ export class BillingService {
     });
   }
 
-  private async settleInvoicePayment(verified: VerifiedTransaction) {
-    const { txRef: reference, id: providerRef, raw } = verified;
+  private async settleInvoicePayment(verified: VerifiedPayment) {
+    const { reference, providerRef, raw } = verified;
 
     return this.prisma.$transaction(async (tx) => {
       const payment = await tx.payment.findUnique({
@@ -425,18 +462,28 @@ export class BillingService {
    * not happen and usually means a price changed mid-checkout.
    */
   private checkAmount(
-    verified: VerifiedTransaction,
+    verified: VerifiedPayment,
     expectedMinor: bigint,
     expectedCurrency: string,
   ): string | null {
     if (verified.currency.toUpperCase() !== expectedCurrency.toUpperCase()) {
-      return `expected ${expectedCurrency}, was paid ${verified.currency}`;
+      // MTN's sandbox settles everything in EUR regardless of what was asked
+      // for, so in sandbox a currency mismatch is expected and blocking on it
+      // would make the whole flow untestable. `isSandbox` is false for every
+      // production configuration, so this branch cannot run against real money.
+      if (!this.payments.isSandbox) {
+        return `expected ${expectedCurrency}, was paid ${verified.currency}`;
+      }
+      this.logger.warn(
+        `Sandbox ${this.payments.name}: accepting ${verified.currency} for a ${expectedCurrency} charge.`,
+      );
     }
 
     // Our side is minor units; the gateway's is major. Convert ours the same way
     // the checkout did, so rounding cannot make an exact payment look short.
     const expectedMajor = toGatewayAmount(Number(expectedMinor), expectedCurrency);
-    const paidMajor = verified.chargedAmount || verified.amount;
+    // The adapter already resolves "what actually left the payer" to `amount`.
+    const paidMajor = verified.amount;
 
     // A hair of tolerance for float representation, not for real shortfalls.
     if (paidMajor + 0.001 < expectedMajor) {
@@ -444,7 +491,7 @@ export class BillingService {
     }
     if (paidMajor > expectedMajor + 0.001) {
       this.logger.warn(
-        `Overpayment on ${verified.txRef}: expected ${expectedMajor} ${expectedCurrency}, received ${paidMajor}. Crediting as paid.`,
+        `Overpayment on ${verified.reference}: expected ${expectedMajor} ${expectedCurrency}, received ${paidMajor}. Crediting as paid.`,
       );
     }
     return null;

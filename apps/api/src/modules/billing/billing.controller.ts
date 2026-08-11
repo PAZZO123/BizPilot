@@ -1,4 +1,5 @@
 import {
+  Inject,
   Body,
   Controller,
   ForbiddenException,
@@ -18,6 +19,7 @@ import { IsEmail, IsIn, IsOptional, IsString, Length } from 'class-validator';
 import { PLAN_ORDER, type PlanId } from '@bizpilot/shared';
 import { BusinessId, CurrentUser, Public, Roles } from '../../common/decorators';
 import { BillingService } from './billing.service';
+import { PAYMENT_PROVIDER, type PaymentProvider } from './payment-provider';
 import { FlutterwaveService } from './flutterwave.service';
 
 export class StartCheckoutDto {
@@ -104,6 +106,7 @@ export class PaymentsWebhookController {
   constructor(
     private readonly billing: BillingService,
     private readonly flutterwave: FlutterwaveService,
+    @Inject(PAYMENT_PROVIDER) private readonly payments: PaymentProvider,
   ) {}
 
   /**
@@ -140,6 +143,58 @@ export class PaymentsWebhookController {
     // comes from verifying the transaction against Flutterwave directly.
     const result = await this.billing.settleTransaction(transactionId);
     return { received: true, ...result };
+  }
+
+  /**
+   * MTN's callback for a Request to Pay.
+   *
+   * The secret is in the path because MTN does not sign callbacks — there is no
+   * header to check. That raises the bar but is not the real defence: as with
+   * Flutterwave, nothing here is trusted. The body is a nudge to go and ask MTN
+   * what happened, and only MTN's answer is acted on.
+   */
+  @Public()
+  @Post('webhooks/momo/:secret')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 600, ttl: 60_000 } })
+  @ApiOperation({ summary: 'MTN MoMo payment callback' })
+  async handleMomoCallback(
+    @Param('secret') secret: string,
+    @Body() payload: Record<string, unknown>,
+  ) {
+    if (!this.payments.verifyWebhookSignature(secret)) {
+      this.logger.warn('Rejected a MoMo callback with a bad or missing secret.');
+      throw new ForbiddenException('Invalid signature.');
+    }
+
+    const reference = this.payments.extractTransactionId(payload);
+    if (!reference) {
+      this.logger.warn('MoMo callback had no reference; ignoring.');
+      return { received: true };
+    }
+
+    const result = await this.billing.settleTransaction(reference);
+    return { received: true, ...result };
+  }
+
+  /**
+   * Polled by the payer's browser while a phone prompt is outstanding.
+   *
+   * A push payment has no redirect to come back on, so the screen asks here
+   * until the answer stops being "pending". Public, because the payer of an
+   * invoice has no account — the reference is an unguessable UUID and this
+   * settles idempotently, so asking about someone else's payment requires
+   * already knowing its id, and tells you nothing but a status word.
+   */
+  @Public()
+  @Get('payments/:reference/status')
+  @Throttle({ default: { limit: 120, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Check whether a pushed payment has been approved' })
+  async paymentStatus(@Param('reference') reference: string) {
+    const result = await this.billing.settleTransaction(reference);
+    // `settled` is true once the money is confirmed and credited; anything else
+    // means keep waiting or give up. Spread first so the explicit boolean wins.
+    return { ...result, settled: result.settled === true };
   }
 
   @Public()

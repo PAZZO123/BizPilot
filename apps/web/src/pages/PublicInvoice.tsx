@@ -5,6 +5,7 @@ import { CheckCircle2, XCircle } from 'lucide-react';
 import { api, errorMessage } from '../lib/api';
 import { formatDate, formatMoney } from '../lib/format';
 import { Card, Input, PageLoader, Spinner, StatusBadge } from '../components/ui';
+import { PushPaymentDialog } from '../components/PushPaymentDialog';
 
 interface PublicInvoice {
   number: string;
@@ -38,6 +39,15 @@ interface PublicInvoice {
  * token in the URL is the only credential, and the API returns nothing beyond
  * what a payer needs to see.
  */
+/** Same union as the billing screen: a page to visit, or a prompt already sent. */
+type PayResponse = {
+  reference: string;
+  amount: number;
+  checkout:
+    | { kind: 'redirect'; url: string }
+    | { kind: 'push'; sentTo: string; pollAfterMs: number };
+};
+
 export function PublicInvoice() {
   const { token } = useParams<{ token: string }>();
   const [params] = useSearchParams();
@@ -45,6 +55,12 @@ export function PublicInvoice() {
 
   const [payerEmail, setPayerEmail] = useState('');
   const [payerName, setPayerName] = useState('');
+  const [payerPhone, setPayerPhone] = useState('');
+  const [push, setPush] = useState<{
+    reference: string;
+    sentTo: string;
+    pollAfterMs: number;
+  } | null>(null);
   const [confirmState, setConfirmState] = useState<'idle' | 'checking' | 'paid' | 'failed'>('idle');
   const [confirmMessage, setConfirmMessage] = useState('');
 
@@ -88,13 +104,23 @@ export function PublicInvoice() {
   const pay = useMutation({
     mutationFn: async () =>
       (
-        await api.post<{ checkoutUrl: string }>(`/public/invoices/${token}/pay`, {
+        await api.post<PayResponse>(`/public/invoices/${token}/pay`, {
           email: payerEmail,
           name: payerName || undefined,
+          // Only mobile money needs this, and only mobile money asks for it.
+          phone: payerPhone || undefined,
         })
       ).data,
     onSuccess: (response) => {
-      window.location.href = response.checkoutUrl;
+      if (response.checkout.kind === 'redirect') {
+        window.location.href = response.checkout.url;
+        return;
+      }
+      setPush({
+        reference: response.reference,
+        sentTo: response.checkout.sentTo,
+        pollAfterMs: response.checkout.pollAfterMs,
+      });
     },
   });
 
@@ -252,8 +278,12 @@ export function PublicInvoice() {
             <h2 className="font-semibold text-slate-900">
               Pay {formatMoney(data.balanceDue, currency)}
             </h2>
+            {/* Deliberately vague about *how* the payment continues: with mobile
+                money the prompt arrives on the phone and the page never changes,
+                with a card gateway there is a redirect. Promising one and doing
+                the other is the confusing case. */}
             <p className="mt-1 text-sm text-slate-500">
-              With MTN MoMo, Airtel Money or a card. You will be taken to a secure payment page.
+              Pay securely with mobile money or a card. Nothing is charged until you approve it.
             </p>
 
             <form
@@ -277,6 +307,15 @@ export function PublicInvoice() {
                 value={payerName}
                 onChange={(event) => setPayerName(event.target.value)}
               />
+              <Input
+                label="Mobile money number"
+                type="tel"
+                inputMode="tel"
+                value={payerPhone}
+                onChange={(event) => setPayerPhone(event.target.value)}
+                placeholder="0788 123 456"
+                hint="We send the payment request here. Leave blank to pay by card."
+              />
 
               {pay.isError && (
                 <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -296,6 +335,19 @@ export function PublicInvoice() {
           Sent with BizPilot — free sales and stock tracking for small businesses.
         </p>
       </div>
+
+      <PushPaymentDialog
+        open={push !== null}
+        reference={push?.reference ?? null}
+        sentTo={push?.sentTo ?? null}
+        pollAfterMs={push?.pollAfterMs}
+        onPaid={() => {
+          setPush(null);
+          setConfirmState('paid');
+          void refetch();
+        }}
+        onClose={() => setPush(null)}
+      />
     </div>
   );
 }

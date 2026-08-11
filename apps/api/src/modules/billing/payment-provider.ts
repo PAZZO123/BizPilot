@@ -45,6 +45,9 @@ export interface CheckoutRequest {
   customer: { email?: string; name?: string; phone?: string };
   /** Where a REDIRECT provider should return the payer. */
   returnUrl: string;
+  /** Shown on a hosted checkout page. Ignored by PUSH providers. */
+  title?: string;
+  logoUrl?: string;
   /** Echoed back on confirmation; used to route the settlement. */
   meta: Record<string, string>;
 }
@@ -78,6 +81,18 @@ export interface PaymentProvider {
 
   /** Which channels this provider actually offers, for the payment screen. */
   readonly channels: ('momo' | 'card' | 'bank')[];
+
+  /**
+   * True when pointed at the provider's test environment.
+   *
+   * Settlement uses this to relax exactly one check — see `checkAmount` in
+   * BillingService. MTN's sandbox settles every payment in EUR no matter what
+   * currency was asked for, so a strict currency comparison makes a sandbox
+   * payment unsettleable and the feature untestable before MTN grant production
+   * access. Nothing else changes, and a provider pointed at production must
+   * report false so the strict path is the only one that can ever run there.
+   */
+  readonly isSandbox: boolean;
 
   /** A reference that is unique, readable in the provider's dashboard, and
    *  not guessable. */

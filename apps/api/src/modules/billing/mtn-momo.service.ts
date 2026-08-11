@@ -73,6 +73,13 @@ export class MtnMomoService implements PaymentProvider {
     return this.targetEnvironment === 'sandbox' ? 'EUR' : 'RWF';
   }
 
+  /** Anything that is not literally MTN's production environment. Deliberately
+   *  a whitelist: a typo in the variable errs towards test, never towards
+   *  treating a sandbox payment as real money. */
+  get isSandbox(): boolean {
+    return this.targetEnvironment !== 'production';
+  }
+
   buildReference(): string {
     // MTN requires a UUID, and this same value is the transaction id.
     return randomUUID();

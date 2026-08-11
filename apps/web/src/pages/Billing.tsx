@@ -13,6 +13,7 @@ import {
   Spinner,
   StatusBadge,
 } from '../components/ui';
+import { PushPaymentDialog } from '../components/PushPaymentDialog';
 import { isOwner, useAuth } from '../store/auth';
 
 interface Plan {
@@ -29,12 +30,29 @@ interface UsageEntry {
   limit: number | null;
 }
 
+/**
+ * Starting a payment gives back one of two shapes, and which depends on the
+ * provider — a card gateway returns a page to visit, mobile money has already
+ * pushed a prompt to a handset. Modelled as a union so the screen cannot assume
+ * a URL exists; TypeScript refuses to compile the assumption.
+ */
+type CheckoutResponse = {
+  reference: string;
+  amount: number;
+  currency: string;
+  checkout:
+    | { kind: 'redirect'; url: string }
+    | { kind: 'push'; sentTo: string; pollAfterMs: number };
+};
+
 interface BillingOverview {
   plan: Plan;
   purchasedPlan: string;
   subscriptionStatus: string;
   trialEndsAt: string | null;
   paymentsConfigured: boolean;
+  paymentProvider: string;
+  paymentChannels: ('momo' | 'card' | 'bank')[];
   usage: {
     salesThisMonth: UsageEntry;
     smsThisMonth: UsageEntry;
@@ -61,6 +79,11 @@ export function Billing() {
   const { user, business } = useAuth();
   const queryClient = useQueryClient();
   const [cancelling, setCancelling] = useState(false);
+  const [push, setPush] = useState<{
+    reference: string;
+    sentTo: string;
+    pollAfterMs: number;
+  } | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['billing'],
@@ -75,10 +98,21 @@ export function Billing() {
 
   const checkout = useMutation({
     mutationFn: async (plan: string) =>
-      (await api.post<{ checkoutUrl: string }>('/billing/checkout', { plan })).data,
+      (await api.post<CheckoutResponse>('/billing/checkout', { plan })).data,
     onSuccess: (response) => {
-      // Hand off to Flutterwave's hosted page — card details never touch us.
-      window.location.href = response.checkoutUrl;
+      // Two shapes, and which one arrives depends on the provider. A card
+      // gateway hands back a page to visit; mobile money has already sent a
+      // prompt to a handset and there is nowhere to go.
+      if (response.checkout.kind === 'redirect') {
+        // Hand off to the hosted page — card details never touch us.
+        window.location.href = response.checkout.url;
+        return;
+      }
+      setPush({
+        reference: response.reference,
+        sentTo: response.checkout.sentTo,
+        pollAfterMs: response.checkout.pollAfterMs,
+      });
     },
     onError: (error) => toast.error(errorMessage(error), { duration: 6000 }),
   });
@@ -169,7 +203,7 @@ export function Billing() {
         <Card className="border-amber-200 bg-amber-50">
           <p className="text-sm text-amber-900">
             Online payments are not configured on this installation yet, so upgrading will not work.
-            Add your Flutterwave keys to the server environment to switch it on.
+            Add your {data.paymentProvider} keys to the server environment to switch it on.
           </p>
         </Card>
       )}
@@ -231,7 +265,8 @@ export function Billing() {
           })}
         </div>
         <p className="mt-3 text-sm text-slate-500">
-          Pay with MTN MoMo, Airtel Money or card. You are charged for one month at a time.
+          Pay with {channelSentence(data.paymentChannels)}. You are charged for one month at a
+          time.
         </p>
       </div>
 
@@ -259,6 +294,19 @@ export function Billing() {
         </Card>
       ) : null}
 
+      <PushPaymentDialog
+        open={push !== null}
+        reference={push?.reference ?? null}
+        sentTo={push?.sentTo ?? null}
+        pollAfterMs={push?.pollAfterMs}
+        onPaid={() => {
+          setPush(null);
+          toast.success('Your plan is active. Thank you.');
+          void queryClient.invalidateQueries({ queryKey: ['billing'] });
+        }}
+        onClose={() => setPush(null)}
+      />
+
       <ConfirmDialog
         open={cancelling}
         title="Cancel your plan?"
@@ -271,6 +319,25 @@ export function Billing() {
       />
     </div>
   );
+}
+
+/**
+ * Names the ways this installation can actually take money.
+ *
+ * Advertising a card option the provider does not offer sends a shopkeeper
+ * looking for a card field that will never appear, so the list comes from the
+ * server rather than from optimistic copy.
+ */
+function channelSentence(channels: ('momo' | 'card' | 'bank')[]): string {
+  const names: Record<string, string> = {
+    momo: 'mobile money',
+    card: 'a card',
+    bank: 'a bank transfer',
+  };
+  const listed = channels.map((channel) => names[channel] ?? channel);
+  if (listed.length === 0) return 'mobile money';
+  if (listed.length === 1) return listed[0];
+  return `${listed.slice(0, -1).join(', ')} or ${listed[listed.length - 1]}`;
 }
 
 function UsageBar({ label, entry }: { label: string; entry: UsageEntry }) {
