@@ -101,7 +101,7 @@ const { access_token: token } = await tokenResponse.json();
 console.log('ok\n');
 
 /** One Request to Pay. Returns MTN's status and body verbatim. */
-async function probe({ label, phone, amount, callback, currency = CURRENCY }) {
+async function probe({ label, phone, amount, callback, currency = CURRENCY, message = 'BizPilot diagnostic' }) {
   const reference = randomUUID();
   const response = await fetch(`${BASE}/collection/v1_0/requesttopay`, {
     method: 'POST',
@@ -118,8 +118,8 @@ async function probe({ label, phone, amount, callback, currency = CURRENCY }) {
       currency,
       externalId: reference,
       payer: { partyIdType: 'MSISDN', partyId: phone },
-      payerMessage: 'BizPilot diagnostic',
-      payeeNote: 'BizPilot diagnostic',
+      payerMessage: message,
+      payeeNote: message,
     }),
   });
 
@@ -150,6 +150,21 @@ results.push([
 results.push([
   'with the callback url — the full checkout request',
   await probe({ label: 'with the callback url — the full checkout request', phone: REAL_PHONE, amount: REAL_AMOUNT, callback: true }),
+]);
+
+// The checkout's own wording. Every probe above is typed in ASCII because that
+// is what anyone types into a script; the real message is built from a template
+// containing an em dash, and shop names carry accents. If MTN objects to those
+// characters it does so with a bodyless 400 that names nothing.
+results.push([
+  'the real message text, with an em dash',
+  await probe({
+    label: 'the real message text, with an em dash',
+    phone: REAL_PHONE,
+    amount: REAL_AMOUNT,
+    callback: false,
+    message: 'Starter plan — Duka rya Kigali',
+  }),
 ]);
 
 // Two questions the probes above cannot answer, asked separately because a

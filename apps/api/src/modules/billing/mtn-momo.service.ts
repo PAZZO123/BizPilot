@@ -149,10 +149,11 @@ export class MtnMomoService implements PaymentProvider {
         currency: this.currency,
         externalId: request.reference,
         payer: { partyIdType: 'MSISDN', partyId: phone },
-        // Both of these are shown to the payer on their handset. Keep them
-        // short — long strings are truncated by the USSD menu.
-        payerMessage: request.description.slice(0, 60),
-        payeeNote: request.description.slice(0, 60),
+        // Both of these are shown to the payer on their handset. Kept short —
+        // long strings are truncated by the USSD menu — and plain ASCII, which
+        // is the whole reason this goes through `toMomoText`.
+        payerMessage: toMomoText(request.description),
+        payeeNote: toMomoText(request.description),
       },
     });
 
@@ -475,6 +476,42 @@ export function explainMomoRejection(status: number, body: string): string {
       // Readable enough to search for, and it is the only clue an operator has.
       return `Mobile money refused the payment (${code}).`;
   }
+}
+
+/**
+ * Text MTN will accept on a handset prompt.
+ *
+ * `payerMessage` and `payeeNote` take ASCII only. Send anything else and the
+ * request is refused with a 400 and an empty body — no code, no message,
+ * nothing to work backwards from. This cost an afternoon: every hand-built test
+ * passed because test strings are typed in ASCII, while the real checkout sent
+ * "Starter plan — Shop name" and the em dash killed it. A shop named in
+ * Kinyarwanda with accented characters would have done the same.
+ *
+ * So the punctuation that word processors and templates insert is folded back
+ * to its ASCII original, accents are stripped from letters that have them, and
+ * anything still left outside the set is dropped rather than sent.
+ */
+export function toMomoText(input: string, maxLength = 60): string {
+  const folded = input
+    .replace(/[‐-―]/g, '-') // hyphens and dashes, em dash included
+    .replace(/[‘’‛]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/[…]/g, '...')
+    .replace(/[   ]/g, ' ')
+    // Decompose accented letters and drop the accents: é becomes e, not a hole.
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '');
+
+  const ascii = folded
+    .replace(/[^\x20-\x7E]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength)
+    .trim();
+
+  // A prompt with no text at all is worse than a generic one.
+  return ascii || 'Payment';
 }
 
 /**
