@@ -52,6 +52,11 @@ export class MtnMomoService implements PaymentProvider {
    *  a wasted round trip on every payment. */
   private token: { value: string; expiresAt: number } | null = null;
 
+  /** Whether the callback host has been checked against MTN, and whether it
+   *  lost. Checked once per process — the answer cannot change while we run. */
+  private callbackHostChecked = false;
+  private callbackHostRejected = false;
+
   constructor(private readonly config: ConfigService) {
     this.baseUrl = this.config
       .get<string>('MOMO_BASE_URL', 'https://sandbox.momodeveloper.mtn.com')
@@ -280,6 +285,96 @@ export class MtnMomoService implements PaymentProvider {
     path: string,
     options: { referenceId: string; body: unknown },
   ): Promise<void> {
+    const failure = await this.send(path, options, await this.safeCallbackUrl());
+    if (failure === null) return;
+
+    if (failure.status === 409) {
+      throw new ServiceUnavailableException('That payment has already been requested.');
+    }
+
+    // MTN's reason is a machine code — NOT_ENOUGH_FUNDS, PAYER_NOT_FOUND,
+    // INVALID_CURRENCY and so on. "Check the number and try again" is wrong
+    // advice for most of them and sends the payer chasing a fault that is not
+    // theirs, so say which one it was. Nothing in these bodies is secret.
+    throw new ServiceUnavailableException(explainMomoRejection(failure.status, failure.body));
+  }
+
+  /** Where MTN should call back, or undefined when we have nowhere to be
+   *  called. `MOMO_CALLBACK_HOST` wins, because it is the value that has to
+   *  match what provisioning registered and API_URL is only a good guess. */
+  private get callbackUrl(): string | undefined {
+    if (!this.callbackSecret) return undefined;
+
+    const explicitHost = this.config.get<string>('MOMO_CALLBACK_HOST', '').trim();
+    const base = explicitHost
+      ? `https://${explicitHost.replace(/^https?:\/\//, '').replace(/\/$/, '')}`
+      : this.config.get<string>('API_URL', '');
+
+    return base ? `${base}/api/webhooks/momo/${this.callbackSecret}` : undefined;
+  }
+
+  /**
+   * The callback URL, but only if MTN will actually accept it.
+   *
+   * MTN accepts callbacks on exactly one host, fixed when the API user was
+   * created, and refuses the whole payment if you send any other — so a
+   * mistyped API_URL takes down every checkout. That is a severe outcome for a
+   * setting which only affects how quickly we hear the result: we poll for it
+   * anyway, and the payer notices no difference.
+   *
+   * Retrying without the header after a rejection does not work, because the
+   * reference is already spent and the second attempt collides with the first.
+   * So ask MTN once, at first use, which host it has on file, and drop the
+   * header for the life of the process if it disagrees. Payments keep working
+   * and the operator gets an error naming both hosts.
+   *
+   * Fails open. The lookup is part of the sandbox provisioning API and may not
+   * answer in production, and an unanswered question is no reason to stop
+   * sending a callback that has always worked.
+   */
+  private async safeCallbackUrl(): Promise<string | undefined> {
+    const url = this.callbackUrl;
+    if (!url || this.callbackHostRejected) return undefined;
+    if (this.callbackHostChecked) return url;
+    this.callbackHostChecked = true;
+
+    try {
+      const response = await fetch(`${this.baseUrl}/v1_0/apiuser/${this.apiUser}`, {
+        headers: { 'Ocp-Apim-Subscription-Key': this.subscriptionKey },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!response.ok) return url;
+
+      const { providerCallbackHost } = (await response.json()) as {
+        providerCallbackHost?: string;
+      };
+      if (!providerCallbackHost) return url;
+
+      const ours = new URL(url).host;
+      if (providerCallbackHost.toLowerCase() !== ours.toLowerCase()) {
+        this.callbackHostRejected = true;
+        this.logger.error(
+          `MTN accepts callbacks only on "${providerCallbackHost}" but this server would send ` +
+            `"${ours}". Set MOMO_CALLBACK_HOST to the first of those, or correct API_URL. ` +
+            'Continuing without a callback — payments will settle by polling, a little slower.',
+        );
+        return undefined;
+      }
+    } catch {
+      // Unreachable or not supported here; assume the configured URL is right.
+    }
+    return url;
+  }
+
+  /**
+   * One Request to Pay. Returns null when MTN accepted it, or the status and
+   * body when it did not — the caller decides what a given refusal means.
+   */
+  private async send(
+    path: string,
+    options: { referenceId: string; body: unknown },
+    callbackUrl: string | undefined,
+  ): Promise<{ status: number; body: string } | null> {
     const token = await this.accessToken();
     const response = await fetch(`${this.baseUrl}${path}`, {
       method: 'POST',
@@ -289,11 +384,7 @@ export class MtnMomoService implements PaymentProvider {
         'X-Target-Environment': this.targetEnvironment,
         'Ocp-Apim-Subscription-Key': this.subscriptionKey,
         'Content-Type': 'application/json',
-        ...(this.callbackSecret && this.config.get<string>('API_URL')
-          ? {
-              'X-Callback-Url': `${this.config.get<string>('API_URL')}/api/webhooks/momo/${this.callbackSecret}`,
-            }
-          : {}),
+        ...(callbackUrl ? { 'X-Callback-Url': callbackUrl } : {}),
       },
       body: JSON.stringify(options.body),
       signal: AbortSignal.timeout(30_000),
@@ -301,20 +392,14 @@ export class MtnMomoService implements PaymentProvider {
 
     // A request to pay is accepted, not completed — 202 with an empty body is
     // success. Anything else is a real failure.
-    if (response.status !== 202) {
-      const detail = await response.text().catch(() => '');
-      this.logger.error(`MoMo ${path} failed: ${response.status} ${detail.slice(0, 300)}`);
+    if (response.status === 202) return null;
 
-      if (response.status === 409) {
-        throw new ServiceUnavailableException('That payment has already been requested.');
-      }
-
-      // MTN's reason is a machine code — NOT_ENOUGH_FUNDS, PAYER_NOT_FOUND,
-      // INVALID_CURRENCY and so on. "Check the number and try again" is wrong
-      // advice for most of them and sends the payer chasing a fault that is not
-      // theirs, so say which one it was. Nothing in these bodies is secret.
-      throw new ServiceUnavailableException(explainMomoRejection(detail));
-    }
+    const body = await response.text().catch(() => '');
+    this.logger.error(
+      `MoMo ${path} failed: ${response.status} ${body.slice(0, 300) || '(empty body)'}` +
+        `${callbackUrl ? '' : ' [sent without a callback url]'}`,
+    );
+    return { status: response.status, body };
   }
 
   private async get(path: string): Promise<unknown> {
@@ -347,14 +432,24 @@ export class MtnMomoService implements PaymentProvider {
  * on MTN all got the same advice, and only one of them involves the number.
  * Unrecognised codes are passed through rather than flattened, because the next
  * unfamiliar one should still say something true.
+ *
+ * When there is no code at all the status and MTN's own sentence are quoted
+ * instead. Not every refusal comes from MTN itself — the gateway in front of it
+ * answers some of them, in its own format, with no code field — and a bare
+ * "please try again" for those hides the only description of the fault that
+ * exists anywhere except the server log.
  */
-export function explainMomoRejection(body: string): string {
+export function explainMomoRejection(status: number, body: string): string {
   let code = '';
+  let message = '';
   try {
-    code = String((JSON.parse(body) as { code?: string }).code ?? '');
+    const parsed = JSON.parse(body) as { code?: string; message?: string };
+    code = String(parsed.code ?? '');
+    message = String(parsed.message ?? '');
   } catch {
     // Some errors come back as bare text, or as an empty body on a 500.
     code = /[A-Z_]{6,}/.exec(body)?.[0] ?? '';
+    message = body.slice(0, 160).trim();
   }
 
   switch (code) {
@@ -373,7 +468,9 @@ export function explainMomoRejection(body: string): string {
     case 'INTERNAL_PROCESSING_ERROR':
       return 'Mobile money is not responding right now. Please try again in a moment.';
     case '':
-      return 'Mobile money could not take that payment. Please try again.';
+      return message
+        ? `Mobile money refused the payment (${status}: ${message})`
+        : `Mobile money could not take that payment — no reason given (${status}). Please try again.`;
     default:
       // Readable enough to search for, and it is the only clue an operator has.
       return `Mobile money refused the payment (${code}).`;

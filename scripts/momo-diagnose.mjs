@@ -68,6 +68,23 @@ function normalise(input, countryCode = '250') {
   return digits;
 }
 
+// --- What MTN has on file ---------------------------------------------------
+// The API user carries the one host MTN will accept callbacks on, fixed when it
+// was created and not changeable afterwards. Printing it turns a rejection that
+// says only "does not match the configured value" into a comparison anyone can
+// make against the host the server is actually using.
+const apiUserResponse = await fetch(`${BASE}/v1_0/apiuser/${API_USER}`, {
+  headers: { 'Ocp-Apim-Subscription-Key': SUBSCRIPTION_KEY },
+});
+if (apiUserResponse.ok) {
+  const { providerCallbackHost } = await apiUserResponse.json();
+  console.log(`MTN will accept callbacks only on: ${providerCallbackHost}`);
+  console.log('The API must send exactly this host. Compare it with the line the');
+  console.log('server logs at boot: `callbacks to <host>`.\n');
+} else {
+  console.log(`Could not read the API user: ${apiUserResponse.status}\n`);
+}
+
 // --- Token ------------------------------------------------------------------
 process.stdout.write('Requesting a token… ');
 const basic = Buffer.from(`${API_USER}:${API_KEY}`).toString('base64');

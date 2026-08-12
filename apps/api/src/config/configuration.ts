@@ -103,6 +103,15 @@ const envSchema = z.object({
   MOMO_TARGET_ENVIRONMENT: z.string().default('sandbox'),
   MOMO_CALLBACK_SECRET: z.string().optional().default(''),
 
+  /**
+   * The host MTN will accept callbacks on, if it is not the host in API_URL.
+   *
+   * MTN fixes this when the API user is created and refuses any payment whose
+   * callback names a different host, so it has to match exactly. API_URL is
+   * usually right and is used when this is blank.
+   */
+  MOMO_CALLBACK_HOST: z.string().optional().default(''),
+
   FLUTTERWAVE_PUBLIC_KEY: z.string().optional().default(''),
   FLUTTERWAVE_SECRET_KEY: z.string().optional().default(''),
   FLUTTERWAVE_WEBHOOK_HASH: z.string().optional().default(''),
