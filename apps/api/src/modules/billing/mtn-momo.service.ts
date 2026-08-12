@@ -463,6 +463,15 @@ export function explainMomoRejection(status: number, body: string): string {
       return 'That mobile money account has reached its limit for now.';
     case 'INVALID_CURRENCY':
       return 'Mobile money cannot take a payment in this currency. Tell the shop owner.';
+    // Not the payer's fault and not fixable by retrying: the environment named
+    // in the request does not match the credentials. Sandbox keys allow only
+    // "sandbox"; production keys, issued separately once MTN approves the
+    // merchant, allow only "production". Naming the variable saves an hour.
+    case 'NOT_ALLOWED_TARGET_ENVIRONMENT':
+      return (
+        'Mobile money is set up wrongly on this installation: MOMO_TARGET_ENVIRONMENT ' +
+        'does not match the credentials. Tell the shop owner — retrying will not help.'
+      );
     case 'RESOURCE_ALREADY_EXIST':
       return 'That payment has already been requested.';
     case 'SERVICE_UNAVAILABLE':
