@@ -52,6 +52,34 @@ function coerceToSchema(args: Record<string, unknown>, schema: unknown): Record<
 const MAX_RETRY_WAIT_MS = 12_000;
 
 /**
+ * Whether this failure means "that model is not there", as opposed to anything
+ * else that can go wrong.
+ *
+ * Deliberately narrow. Falling back on the wrong signal would silently swap the
+ * model out from under a deployment for a reason that had nothing to do with
+ * the model — a bad key, a full rate limit — and the operator would be left
+ * wondering why their configured choice stopped being used. The status has to
+ * be a 400 or 404 *and* the text has to name the model.
+ */
+function isModelUnavailable(error: unknown): boolean {
+  const status = (error as { status?: number })?.status;
+  if (status !== 400 && status !== 404) return false;
+
+  // Two independent tests rather than one pattern spanning both: model names
+  // are full of dots and dashes, and a single regex trying to reach across one
+  // ("model `llama-3.1-70b` has been decommissioned") is a quiet way to never
+  // match. Requiring both words keeps it just as narrow.
+  const message = (error as Error)?.message ?? '';
+  const namesTheModel = /\bmodels?\b/i.test(message);
+  const saysItIsGone =
+    /(not found|does not exist|decommission|deprecat|no longer (exists|available|supported)|unavailable|not supported|invalid)/i.test(
+      message,
+    );
+
+  return namesTheModel && saysItIsGone;
+}
+
+/**
  * How long to wait before retrying, or null if retrying is pointless.
  *
  * Prefers the `retry-after` header; falls back to the wait the provider quotes
@@ -145,9 +173,35 @@ export interface OpenAiCompatibleConfig {
   maxIterations: number;
 }
 
+/**
+ * What to fall back to when the configured model is gone, best first.
+ *
+ * Matched as prefixes, because providers version their ids — "llama-3.3-70b"
+ * matches "llama-3.3-70b-versatile". Ordered by what this app needs rather than
+ * by raw capability: the assistant's whole job is calling tools correctly and
+ * summarising three rows of SQL, so a reliable mid-size model beats a clever one
+ * that fumbles a function call, and small models come last as a working
+ * assistant beats none.
+ */
+const MODEL_PREFERENCE = [
+  'llama-3.3-70b',
+  'llama-3.1-70b',
+  'qwen-2.5-32b',
+  'mixtral-8x7b',
+  'gemma2-9b',
+  'llama-3.1-8b',
+];
+
 @Injectable()
 export class OpenAiCompatibleProvider {
   private readonly logger = new Logger(OpenAiCompatibleProvider.name);
+
+  /**
+   * Set only once the configured model has been found to be gone. Held for the
+   * life of the process: the list does not change minute to minute, and asking
+   * on every question would add a round trip to each one.
+   */
+  private resolvedModel: string | null = null;
 
   async run(
     config: OpenAiCompatibleConfig,
@@ -277,16 +331,95 @@ export class OpenAiCompatibleProvider {
     choices?: { message?: ChatMessage }[];
     usage?: { prompt_tokens?: number; completion_tokens?: number };
   }> {
+    const active = { ...config, model: this.model(config) };
+
     try {
-      return await this.attempt(config, messages, tools);
+      return await this.attempt(active, messages, tools);
     } catch (error) {
+      // A retired model is not a transient failure and will not fix itself, so
+      // it is worth one look at what the provider does serve today.
+      if (isModelUnavailable(error)) {
+        const replacement = await this.findWorkingModel(active);
+        if (replacement) {
+          return this.attempt({ ...active, model: replacement }, messages, tools);
+        }
+        throw error;
+      }
+
       const wait = retryDelayMs(error);
       if (wait === null) throw error;
 
       this.logger.warn(`Rate limited; waiting ${wait}ms and retrying once.`);
       await new Promise((resolve) => setTimeout(resolve, wait));
-      return this.attempt(config, messages, tools);
+      return this.attempt(active, messages, tools);
     }
+  }
+
+  /** The configured model, unless we have already had to replace it. */
+  private model(config: OpenAiCompatibleConfig): string {
+    return this.resolvedModel ?? config.model;
+  }
+
+  /**
+   * Asks the provider what it actually serves, and picks something that works.
+   *
+   * Free providers retire models constantly — Groq gives a few weeks' notice on
+   * a blog nobody running a corner shop reads. Pinning one name in an
+   * environment variable means the assistant dies on a date nobody wrote down,
+   * with an error the shopkeeper can do nothing about, until someone notices and
+   * edits a variable on a hosting dashboard.
+   *
+   * So when a model turns out to be gone, ask `/models` for the current list and
+   * take the best match from `MODEL_PREFERENCE`. The result is cached for the
+   * life of the process: the assistant heals itself on the first question after
+   * a retirement instead of staying broken until it is reported.
+   *
+   * The configured model still wins whenever it works. This is a fallback, not
+   * an override — nobody's deliberate choice gets silently replaced while it is
+   * still being served.
+   */
+  private async findWorkingModel(config: OpenAiCompatibleConfig): Promise<string | null> {
+    let available: string[];
+    try {
+      const response = await fetch(`${config.baseUrl.replace(/\/$/, '')}/models`, {
+        headers: { Authorization: `Bearer ${config.apiKey}` },
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!response.ok) {
+        this.logger.error(`Could not list models: ${response.status}.`);
+        return null;
+      }
+      const payload = (await response.json()) as { data?: { id?: string }[] };
+      available = (payload.data ?? [])
+        .map((entry) => entry.id)
+        .filter((id): id is string => typeof id === 'string');
+    } catch (error) {
+      this.logger.error(`Could not list models: ${(error as Error).message}`);
+      return null;
+    }
+
+    const chosen = MODEL_PREFERENCE.find((wanted) =>
+      available.some((id) => id === wanted || id.startsWith(wanted)),
+    );
+    // Prefer the exact id the provider published, so the request names a model
+    // rather than the prefix we matched on.
+    const exact = chosen
+      ? (available.find((id) => id === chosen) ?? available.find((id) => id.startsWith(chosen)))
+      : // Nothing recognised: anything that answers is better than a dead
+        // assistant, but skip the models that plainly are not for chatting.
+        available.find((id) => !/whisper|tts|guard|embed|vision/i.test(id));
+
+    if (!exact) {
+      this.logger.error(`Model "${config.model}" is gone and nothing usable was offered instead.`);
+      return null;
+    }
+
+    this.logger.warn(
+      `Model "${config.model}" is no longer available. Falling back to "${exact}". ` +
+        'Set AI_MODEL to this, or to another current model, to make the choice deliberate.',
+    );
+    this.resolvedModel = exact;
+    return exact;
   }
 
   private async attempt(
