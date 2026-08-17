@@ -21,10 +21,10 @@ go out with a link the customer can pay from their own phone.
 | **Reports** | Profit & loss, gross margin, best sellers by profit, spend by category, payment-method mix, busiest hours, cash tied up in dead stock |
 | **End of day** | Cash-up: what should be in the drawer, counted against what is, plus who served and when the money came in |
 | **Printable reports** | Profit & loss and the daily cash-up sheet as clean PDFs — tables, totals, page numbers, and signature blocks with names for whoever prepared and approved them |
-| **Platform dashboard** | Your own books — MRR, trials ending this week, churn, cash collected, and what SMS and AI cost you against it |
+| **Platform console** | Your own books — MRR, trials ending this week, churn, cash collected, real AI token cost against it — plus account management: suspend/restore shops, change plans and roles, browse payments, every action audit-logged with a reason |
 | **AI assistant** | Ask questions in plain language ("who owes me money?") answered from the business's own records via Claude tool use |
 | **SMS** | Queue-backed reminders, automatic 3-day overdue nudges, Africa's Talking / Twilio / log providers |
-| **Payments** | Flutterwave — MTN MoMo, Airtel Money, cards, RWF settlement |
+| **Payments** | MTN MoMo push-to-phone (default) or Flutterwave hosted checkout, behind one provider seam — verified amounts, idempotent settlement |
 | **Billing** | Free / Starter / Business plans, 14-day trial, usage metering, plan-limit enforcement |
 | **Multi-user** | Owner / manager / cashier roles, per-role screens |
 
@@ -52,7 +52,7 @@ npm run docs:docx
 ## Stack
 
 React + TypeScript (Vite) · NestJS · PostgreSQL + Prisma · Redis + BullMQ · Docker ·
-Claude API · Flutterwave
+Claude API · MTN MoMo / Flutterwave
 
 ```
 apps/
@@ -156,13 +156,21 @@ build time, so it will not pick the change up on its own.
 - `ANTHROPIC_API_KEY` — from console.anthropic.com. One key serves every shop;
   owners never supply their own. Leave blank and everything works except the
   assistant, which says so politely.
-- `FLUTTERWAVE_PUBLIC_KEY`, `FLUTTERWAVE_SECRET_KEY`
-- `FLUTTERWAVE_WEBHOOK_HASH` — invent a long random string, then paste the same value
-  into Flutterwave → Settings → Webhooks → *Secret hash*.
+- Payments — set `PAYMENT_PROVIDER` to one of:
+  - `mtn-momo` (the default): `MOMO_SUBSCRIPTION_KEY`, `MOMO_API_USER`,
+    `MOMO_API_KEY`, `MOMO_TARGET_ENVIRONMENT` (`sandbox` until MTN approves you
+    for production), `MOMO_BASE_URL`, `MOMO_CALLBACK_HOST` (this API's host) and
+    `MOMO_CALLBACK_SECRET` (a long random string — MoMo callbacks are unsigned,
+    so this in the URL path is what authenticates them).
+  - `flutterwave`: `FLUTTERWAVE_PUBLIC_KEY`, `FLUTTERWAVE_SECRET_KEY`, and
+    `FLUTTERWAVE_WEBHOOK_HASH` — invent a long random string, then paste the
+    same value into Flutterwave → Settings → Webhooks → *Secret hash*, and point
+    its webhook at `https://bizpilot-api.onrender.com/api/webhooks/flutterwave`.
 - `AFRICASTALKING_USERNAME` / `AFRICASTALKING_API_KEY`, and set `SMS_PROVIDER` to
   `africastalking`, when you are ready to send real texts.
-
-**5. Point Flutterwave's webhook at** `https://bizpilot-api.onrender.com/api/webhooks/flutterwave`.
+- `MAIL_PROVIDER=resend` with `RESEND_API_KEY` and `MAIL_FROM`, so password-reset
+  emails actually deliver. The default (`log`) prints the link to the server log,
+  which is fine in development and an outage in production.
 
 Migrations run automatically on every deploy (`prisma migrate deploy` in the start
 command), so there is nothing manual to do on release.
@@ -207,10 +215,12 @@ pricing page, the usage bars and the enforcement all read from it.
 ### Watch your margins
 
 - **AI.** The assistant defaults to `claude-opus-5` at `low` effort. A typical
-  question runs two or three tool calls. On the Starter plan's 300-question
-  allowance this is the item most likely to cost more than you charge —
-  measure it in your first month, and switch `ANTHROPIC_MODEL` to
-  `claude-sonnet-5` if the numbers do not work.
+  question runs two or three tool calls. Every reply records its real token
+  counts, and the platform console prices the AI line from them (set
+  `AI_INPUT_RWF_PER_MTOK` / `AI_OUTPUT_RWF_PER_MTOK` to your provider's rates).
+  On the Starter plan's 300-question allowance this is the item most likely to
+  cost more than you charge — watch that line in your first month, and switch
+  `ANTHROPIC_MODEL` to `claude-sonnet-5` if the numbers do not work.
 - **SMS.** Africa's Talking is a few francs per message. The cost the gateway
   reports is stored on every `SmsMessage` row, so you can total it.
 - **Payments.** Flutterwave takes its cut of each transaction; the plan prices above

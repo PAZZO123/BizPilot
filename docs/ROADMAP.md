@@ -24,8 +24,12 @@ not run either.
 **There are no backups.** Not configured, not tested. A backup nobody has
 restored from is not a backup.
 
-**There is no password reset.** See [SECURITY.md](SECURITY.md#medium) — an owner
-who forgets their password today has no route back into their own data.
+**Password reset is built but not deliverable.** The flow exists end to end —
+emailed single-use token, thirty-minute expiry, all sessions revoked on
+completion — but with `MAIL_PROVIDER=log` (the default) the link lands in the
+server log, not an inbox. Set `MAIL_PROVIDER=resend` with `RESEND_API_KEY` and
+a verified sending domain in `MAIL_FROM`; the free tier's 100 emails/day is
+plenty for resets.
 
 **Nothing is monitored.** No error tracking, no uptime check, no alert if the
 SMS queue stops draining or Flutterwave webhooks start failing. The first
@@ -108,13 +112,15 @@ improve cash flow and cut churn, and Flutterwave supports it.
 continues through a grace period, then drops. Nobody is told, and no retry is
 attempted.
 
-**Nobody knows what the assistant actually costs.** The platform dashboard
-prices it from `AI_COST_PER_MESSAGE_RWF`, a guess. Token usage is not recorded
-per message. On `claude-opus-5` with Starter's 300-question allowance against
-RWF 7,000/month, this is the line most likely to cost more than it earns — and
-it is currently unmeasured. Record real token counts on `AiMessage`, compare
-against an Anthropic invoice, and switch `ANTHROPIC_MODEL` to `claude-sonnet-5`
-if the numbers do not work.
+**The assistant's cost is now measured, not guessed.** Every assistant reply
+records its real input and output token counts on `AiMessage`, and the platform
+dashboard prices the AI line from those at `AI_INPUT_RWF_PER_MTOK` /
+`AI_OUTPUT_RWF_PER_MTOK` (older, unmetered replies still use the
+`AI_COST_PER_MESSAGE_RWF` estimate). What remains is judgement, not plumbing:
+check the dashboard's figure against a real provider invoice after the first
+month, keep the RWF-per-Mtok rates current when the exchange rate moves, and
+switch `ANTHROPIC_MODEL` to `claude-sonnet-5` if Starter's 300-question
+allowance does not cover its own cost.
 
 **No referral mechanism.** Shopkeepers in one market know every other
 shopkeeper in that market. This is the cheapest distribution available and there
@@ -131,40 +137,40 @@ no unit tests, and the money helpers (`applyBps` rounding, `parseMoney`) are
 exactly the kind of pure functions that should have them. There are no frontend
 tests at all.
 
-## The payment provider is unresolved
+## The payment provider: built on MoMo, pending MTN's approval
 
-**Do not treat the Flutterwave integration as finished.** It is complete and
-correct as code — hosted checkout, verified amounts, idempotent settlement,
-signed webhooks — but it may be built on a provider that will not open a
-merchant account in Rwanda. Stripe was ruled out for exactly that reason and
-Flutterwave was chosen as the alternative; that choice was made from
-documentation, not from trying to sign up.
+The MTN MoMo integration is **built and working against the sandbox**: the
+adapter (`mtn-momo.service.ts`), the PUSH screen — phone-number field, "approve
+on your phone" state, polling — and settlement that re-queries MTN for the real
+amount before crediting. `PAYMENT_PROVIDER=mtn-momo` selects it; Flutterwave
+remains the alternative adapter behind the same `payment-provider.ts` seam.
 
-`payment-provider.ts` is the seam. Settlement, entitlements and the billing
-tables are provider-agnostic; a new provider is one adapter.
+Two things the sandbox taught, so nobody re-learns them:
 
-What still has to happen:
+- **The sandbox settles EUR only.** RWF appears the moment production
+  credentials do; the settlement path relaxes the currency check in sandbox
+  only (`isSandbox`), never in production.
+- **MTN rejects non-ASCII in the handset prompt** with a bodyless 400 — an em
+  dash in a plan name once broke every checkout. `toMomoText()` folds text to
+  ASCII before sending; keep it on that path.
 
-1. **Confirm what will actually onboard you.** This can only be settled by
-   attempting it. Candidates worth trying: Pesapal, Elemipay, K-Pay, RwandaPay,
-   DusuPay, and MTN's own MoMo API.
-2. **Write the adapter.** The interface is documented and the settlement path
-   already checks amount and currency, so an adapter is roughly the size of
-   `flutterwave.service.ts`.
-3. **Build the PUSH screen.** This is the part that is genuinely missing rather
-   than merely unwritten. Mobile money does not redirect anywhere: you send a
-   prompt to a phone number and wait. That needs a phone-number field, a "check
-   your phone" state, and polling — none of which a redirect flow uses, and none
-   of which exists today. `CheckoutResult` is a union specifically so this
-   cannot be forgotten at compile time.
+There is no payee number to configure: money lands in the merchant wallet the
+API credentials belong to. Which wallet gets paid is decided at MTN onboarding,
+not in the app.
 
-MTN's sandbox is free and self-service with no business verification, so the
-PUSH flow can be built and demonstrated end to end before any commercial
-agreement exists. Production needs approval from MTN, which takes time — start
-it early.
+What still has to happen is commercial, not code:
+
+1. **Start MTN production onboarding now** (momodeveloper.mtn.com → the
+   Collections product). It needs business verification and takes time — it is
+   the gate between the working sandbox demo and receiving real money.
+2. **Paste the production credentials** into Render and set
+   `MOMO_TARGET_ENVIRONMENT=production` with the production base URL. The app
+   already behaves correctly on both sides of that switch.
 
 Given mobile money is around 90% of payments in Rwanda, PUSH is the flow that
-matters. Cards are the edge case here, not the default.
+matters. Cards are the edge case here, not the default — and if MTN onboarding
+stalls, the Flutterwave adapter is the fallback to actually attempt, since that
+choice was made from documentation, not from trying to sign up.
 
 **No CI.** Nothing runs the typecheck, the build or the smoke test on push. The
 first production deploy failed on something a five-second CI job would have
@@ -193,9 +199,11 @@ like a record.
 ## Rough order I would work in
 
 1. Paid database + backups + monitoring. *(Nothing else matters if the data goes.)*
-2. Password reset, email verification, refresh tokens into cookies.
-3. Trial-ending emails and in-app upgrade prompts. *(The first revenue that is currently being left on the table.)*
-4. Real AI cost measurement, then the pricing decision that follows from it.
+2. ~~Password reset~~ *(done — turn on a real `MAIL_PROVIDER`)*, email
+   verification, refresh tokens into cookies.
+3. Trial-ending emails and in-app upgrade prompts. *(The first revenue that is currently being left on the table. The mail seam now exists, so the emails are wiring, not infrastructure.)*
+4. ~~Real AI cost measurement~~ *(done)* — now make the pricing decision the
+   dashboard's real numbers point to.
 5. Kinyarwanda.
 6. Offline sales.
 7. EBM integration — the gate on pharmacies and hardware stores.

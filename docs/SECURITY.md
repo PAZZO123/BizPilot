@@ -65,6 +65,18 @@ user does not exist, so response time does not reveal which emails are
 registered. Minimum eight characters with at least one letter and one digit.
 Changing a password revokes every session.
 
+**Password reset.** A forgot-password flow exists: the emailed token is random,
+stored only as a SHA-256 hash, single-use, and expires after thirty minutes;
+requesting a new one invalidates the last. The endpoint answers identically
+whether or not the email exists, so it cannot be used to enumerate accounts,
+and completing a reset revokes every session the old password ever opened.
+Members of a suspended business cannot reset their way back in.
+
+**Suspension actually locks people out.** Suspending a shop from the platform
+console refuses login, refresh *and* every in-flight access token — the JWT
+strategy checks `business.deletedAt` on each request, so suspension takes
+effect within one request, not when sessions happen to expire.
+
 **Refresh tokens.** Opaque 48-byte random strings, not JWTs — only the SHA-256
 hash is stored, so a database leak yields nothing usable, and there is no
 signature to forge. Presenting one burns it and issues a new pair, so a stolen
@@ -76,6 +88,13 @@ credited. The webhook signature is compared in constant time and **rejected
 outright when no hash is configured** — an unset secret does not silently mean
 "accept everything". Settlement is idempotent on our own `tx_ref`, so a replayed
 webhook cannot double-credit.
+
+The MTN MoMo path follows the same rule with one wrinkle: MTN's callbacks are
+unsigned, so the callback URL carries a long random secret in its path
+(`MOMO_CALLBACK_SECRET`) and a request without it is rejected. Either way the
+callback is only a nudge — settlement always re-queries MTN for the
+transaction's real status and amount before crediting anything, and the amount
+check (`checkAmount`) applies to MoMo exactly as it does to Flutterwave.
 
 **Input validation.** A global `ValidationPipe` with `whitelist` and
 `forbidNonWhitelisted`, so an unexpected field is a 400 rather than something
@@ -134,11 +153,12 @@ before the product is public.
 to an empty string — but the failure mode is "allow every origin" when it should
 be "allow none". Fail-closed is one line.
 
-**5. There is no password reset.**
-No forgot-password flow exists. An owner who forgets their password is locked
-out of their own business records permanently, with no recovery except direct
-database access. This is an availability problem today and will become a support
-problem the day there is a second customer.
+**5. Password-reset email delivery depends on `MAIL_PROVIDER`.**
+The reset flow itself is built, but with `MAIL_PROVIDER=log` (the default) the
+link goes to the server log, not an inbox — fine in development, an outage in
+production. Set `MAIL_PROVIDER=resend` with a verified sending domain before
+real shops depend on it; until then a forgotten password is still a support
+call.
 
 **6. Rate limiting is per-instance and in memory.**
 `ThrottlerModule` is configured without a Redis store, so the limits (120/min
@@ -147,12 +167,14 @@ Render's single free instance that is fine; the moment the API scales to two
 instances the effective limit doubles, silently. Redis is already a dependency,
 so pointing the throttler at it is cheap.
 
-**7. Almost nothing is audited.**
-The `AuditLog` table exists but only sales write to it. There is no record of
-logins, failed logins, staff accounts being created, roles changing, prices
-changing, or records being deleted. For a product holding money records — where
-the realistic threat is an insider, not an outsider — this is the gap I would
-close first after the token storage.
+**7. Auditing is partial.**
+The `AuditLog` table is written by sales and by every platform-console mutation
+(suspensions, plan changes, role changes — each with the acting admin's email,
+their stated reason and their IP). But inside the shop app there is still no
+record of logins, failed logins, staff accounts being created, prices changing,
+or records being deleted. For a product holding money records — where the
+realistic threat is an insider, not an outsider — this is the gap I would close
+first after the token storage.
 
 **8. Staff passwords are chosen by the owner.**
 `inviteUser` takes a plaintext password in the request: the owner types a

@@ -15,8 +15,9 @@ browser  ──HTTPS──▶  NestJS API  ──▶  PostgreSQL   (everything d
                           │
                           ├──▶  Redis          (cache + BullMQ job queue)
                           ├──▶  Anthropic API   (the assistant)
-                          ├──▶  Flutterwave     (subscriptions + invoice payment)
-                          └──▶  Africa's Talking / Twilio  (SMS)
+                          ├──▶  MTN MoMo / Flutterwave  (subscriptions + invoice payment)
+                          ├──▶  Africa's Talking / Twilio  (SMS)
+                          └──▶  Resend          (password-reset email)
 ```
 
 A single npm workspaces monorepo:
@@ -211,28 +212,60 @@ measurable.
 
 ### `billing/`
 
-Flutterwave Standard checkout. The rules:
+Two payment providers behind one seam, `payment-provider.ts`, selected by
+`PAYMENT_PROVIDER`. The `CheckoutResult` union names the two shapes a checkout
+can take: `redirect` (Flutterwave's hosted page) and `push` (MTN MoMo sends a
+prompt to the customer's phone and the app polls). The union is the point — a
+new provider cannot forget to say which flow it is at compile time.
 
-- **Nothing is credited on the browser's word.** Both the webhook and the
-  redirect call Flutterwave's verify endpoint server-side first.
-- The webhook signature is checked against the `verif-hash` header with a
-  constant-time compare, and **rejects outright when no hash is configured** —
-  an unset secret must not mean "accept everything".
-- `settleTransaction` is the single idempotent settlement path for both routes,
-  keyed on our own `tx_ref`, so a replayed webhook cannot double-credit.
+The rules, whichever provider is live:
+
+- **Nothing is credited on the browser's word.** Settlement always re-queries
+  the provider server-side for the transaction's real status, amount and
+  currency (`checkAmount`) before crediting anything.
+- Flutterwave's webhook signature is checked against the `verif-hash` header
+  with a constant-time compare, and **rejects outright when no hash is
+  configured**. MoMo's callbacks are unsigned, so the callback URL carries
+  `MOMO_CALLBACK_SECRET` in its path and requests without it are rejected —
+  and the callback is only a nudge to go verify, never trusted itself.
+- Settlement is a single idempotent path keyed on our own reference, so a
+  replayed webhook or callback cannot double-credit.
+- The MoMo sandbox settles EUR only; `isSandbox` relaxes exactly the currency
+  check and nothing else, and never in production. Text sent to the handset
+  prompt goes through `toMomoText()` — MTN rejects non-ASCII with a bodyless
+  400, which once broke every checkout on an em dash.
 
 ### `admin/`
 
-BizPilot's own books: MRR, ARR, trials in flight, trials ending within seven
-days, churn, cash collected by month, signups by week, and cost-to-serve (SMS +
-estimated AI) against revenue. Plus a table of every shop with usage, so a trial
-that is actually being used can be told apart from one that is not.
+Two halves behind the same `PlatformAdminGuard`.
+
+**The books** (`admin.service.ts`): MRR, ARR, trials in flight, trials ending
+within seven days, churn, cash collected by month, signups by week, and
+cost-to-serve against revenue — SMS at gateway-reported cost, AI priced from
+the real token counts recorded on every assistant reply. Plus a table of every
+shop with usage, so a trial that is actually being used can be told apart from
+one that is not.
+
+**The controls** (`admin-management.service.ts`): suspend and restore shops,
+change plans, deactivate users and change roles, browse payments, read the
+audit trail. Every mutation requires a written reason and writes an `AuditLog`
+row carrying the acting admin's email and IP. Guard rails are structural: an
+admin cannot act on their own account, on another platform admin, or suspend a
+business a platform admin belongs to; the last owner of a business cannot be
+demoted.
 
 This is the only code that reads across tenants, which is the exact opposite of
 the rule everything else follows. That is why it is a separate module behind its
 own `PlatformAdminGuard`, gated on the `PLATFORM_ADMIN_EMAILS` environment
 variable rather than a database column — nobody can grant it from inside the
 product, and an empty list means nobody rather than everybody.
+
+### `mail/`
+
+The same provider seam as SMS, one size smaller: `log` (development — the
+password-reset link prints to the server log) and `resend` (one POST to
+Resend's REST API, no SDK). Only password resets send email today; trial-ending
+notices would reuse this seam.
 
 ---
 
@@ -360,8 +393,9 @@ Docker — both are set to the same string.
 hand:
 `WEB_URL` and `CORS_ORIGINS` on the API, `VITE_API_URL` on the web service (it
 is baked in at build time, so redeploy the static site after changing it), and
-the secrets — `PLATFORM_ADMIN_EMAILS`, `ANTHROPIC_API_KEY`, the Flutterwave
-keys, and the SMS credentials.
+the secrets — `PLATFORM_ADMIN_EMAILS`, `ANTHROPIC_API_KEY`, the payment
+provider's keys (`MOMO_*` or `FLUTTERWAVE_*`), the SMS credentials, and the
+mail credentials (`RESEND_API_KEY` / `MAIL_FROM`) so password resets deliver.
 
 Migrations run automatically on every deploy via `prisma migrate deploy` in the
 start command.

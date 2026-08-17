@@ -167,6 +167,17 @@ in.
 If you do not see it, the email does not match — check for a typo or a stray
 space, and that the API finished restarting.
 
+That item opens the platform console: **Overview** (MRR, trials, cost to
+serve), **Accounts** (suspend, restore, change plan), **People** (deactivate a
+user, change a role), **Payments**, **Audit** and **System**. Every action that
+changes something asks for a written reason and records it against your email —
+including when you are the one who did it.
+
+There is no separate admin registration and no admin password. The console is
+your normal account plus membership of `PLATFORM_ADMIN_EMAILS`; log in exactly
+as you always do. That is deliberate — an account that can read every
+customer's turnover should not be creatable from inside the product.
+
 ---
 
 ## 6. Check it actually works
@@ -199,26 +210,47 @@ supply their own. Until you set it, the Assistant screen says so politely.
 
 Watch the cost. On `claude-opus-5` with the Starter plan's 300-question monthly
 allowance, this is the one feature that can cost more than the RWF 7,000 you
-charge. The Platform dashboard shows an estimate; check it against a real
-Anthropic invoice in month one, and switch `ANTHROPIC_MODEL` to
-`claude-sonnet-5` if the numbers do not work.
+charge. The Platform dashboard prices it from the real token counts recorded on
+every reply (set `AI_INPUT_RWF_PER_MTOK` / `AI_OUTPUT_RWF_PER_MTOK` to your
+provider's rates); check its figure against a real invoice in month one, and
+switch `ANTHROPIC_MODEL` to `claude-sonnet-5` if the numbers do not work.
 
-### Taking payments — MoMo, bank transfer and card
+### Taking payments
 
-The integration is finished and already offers all three in Rwanda
-(`card,mobilemoneyrwanda,banktransfer`). What follows is switching it on.
+Two providers are built behind one seam; `PAYMENT_PROVIDER` picks one.
 
-**What costs nothing:** the Flutterwave account, test mode, and this entire
-setup. There is no monthly fee and no setup fee, and test mode is unlimited —
-you can demonstrate a customer paying an invoice by MoMo today, for nothing.
+**`mtn-momo` (the default).** The customer types their phone number, MTN pushes
+an approval prompt to their handset, and the app polls until they approve. This
+is the flow ~90% of payments in Rwanda actually use. The sandbox at
+[momodeveloper.mtn.com](https://momodeveloper.mtn.com) is free and self-service:
+subscribe to the **Collections** product, create an API user and key, and set
+`MOMO_SUBSCRIPTION_KEY`, `MOMO_API_USER`, `MOMO_API_KEY`,
+`MOMO_TARGET_ENVIRONMENT=sandbox`, `MOMO_BASE_URL`, `MOMO_CALLBACK_HOST` (the
+API's own host) and `MOMO_CALLBACK_SECRET` (a long random string) on
+`bizpilot-api`. Two sandbox quirks the app already knows about: it settles EUR
+only (RWF arrives with production credentials), and the environment must match
+where the credentials were issued or MTN answers
+`NOT_ALLOWED_TARGET_ENVIRONMENT`.
+
+Going live is a commercial step, not a code one: MTN's production onboarding
+verifies the business and decides which merchant wallet receives the money
+(there is no payee number to configure in the app). It takes time — start it
+well before launch. Then swap in the production credentials and set
+`MOMO_TARGET_ENVIRONMENT=production`.
+
+**`flutterwave` (the alternative)** offers hosted checkout with card, MoMo and
+bank transfer (`card,mobilemoneyrwanda,banktransfer`). Setup follows.
+
+**What costs nothing:** the account, test mode, and this entire setup — for
+either provider. There is no monthly fee and no setup fee.
 
 **What is not free, and cannot be:** every payment processor takes a percentage
 of each transaction. That is how they exist. The important part is *when* you
 pay it — it comes out of money arriving, never out of your pocket, so there is
-no cost before there is revenue. Check Flutterwave's current Rwanda rates
+no cost before there is revenue. Check each provider's current Rwanda rates
 yourself; they differ by channel, and mobile money is usually cheaper than card.
 
-#### Test mode — do this now, free
+#### Flutterwave test mode
 
 1. Sign up at flutterwave.com. Dashboard → **Settings → API Keys**, and switch
    the dashboard to **Test mode**. Test keys are issued immediately, with no
@@ -289,8 +321,12 @@ are in it, these stop being optional:
    compute-hours budget. BizPilot's data is small — a year of a busy shop is
    megabytes — so compute hours will bite first if traffic grows.
 4. **Read [SECURITY.md](SECURITY.md)** and fix at least the top three. Right
-   now a successful XSS hands over a 30-day session, there is no password reset,
-   and there is no email verification.
+   now a successful XSS hands over a 30-day session and there is no email
+   verification.
+5. **Set `MAIL_PROVIDER=resend`** with `RESEND_API_KEY` and a verified sending
+   domain in `MAIL_FROM`. Password reset is built, but on the default `log`
+   provider the reset link goes to the server log — an outage the first time a
+   real owner forgets their password.
 
 ---
 
@@ -308,6 +344,8 @@ are in it, these stop being optional:
 | `/api/health` says `"cache": "down"` | The Key Value service is still starting, or `REDIS_URL` did not link. Check `bizpilot-redis` is live, then restart the API. |
 | First request of the day takes ~50 seconds | The free instance was asleep. Expected. Only an upgrade fixes it. |
 | No **Platform** item in the sidebar | Your logged-in email is not in `PLATFORM_ADMIN_EMAILS`, or the API has not restarted since you set it. |
+| "Reset link is on its way" but no email arrives | `MAIL_PROVIDER` is still `log` — the link is in the API log. Or it is `resend` with a missing key, which falls back to `log` and says so at boot. On Resend's unverified `onboarding@resend.dev` sender, delivery is limited to your own address. |
+| MoMo checkout fails with no reason given | Almost always config, not code. Check `MOMO_TARGET_ENVIRONMENT` matches where the credentials were issued (`NOT_ALLOWED_TARGET_ENVIRONMENT` says it does not), and that `MOMO_CALLBACK_HOST` equals the `providerCallbackHost` the API user was registered with. `scripts/momo-diagnose.mjs` replays the request one variable at a time. |
 | Deploy fails on `npm ci` | `package-lock.json` is out of step with `package.json`. Run `npm install` locally, commit the lock file, push. |
 | Build fails compiling TypeScript with an error about a setting that works locally | `NODE_ENV=production` makes npm skip devDependencies at install time, so the project's own TypeScript is missing and `tsc` resolves to whatever is on the image's PATH. Both build commands pass `--include=dev` for this reason — do not remove it. |
 | The app boots locally but not on Render, on a value Render generated | `fromService: { property: host }` yields a bare hostname, not a URL. `WEB_URL` and `API_URL` prefix `https://` themselves; anything new that needs a URL should too. |
