@@ -42,6 +42,12 @@ export class AdminController {
   shops(@Query('limit') limit?: string) {
     return this.admin.shops(clamp(limit, 100, 1, 500));
   }
+
+  @Get('system')
+  @ApiOperation({ summary: 'What this installation is wired to — names and on/off only' })
+  system() {
+    return this.admin.system();
+  }
 }
 
 function clamp(raw: string | undefined, fallback: number, min: number, max: number): number {

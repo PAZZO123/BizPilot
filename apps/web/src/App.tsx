@@ -18,6 +18,12 @@ import { Reports } from './pages/Reports';
 import { Assistant } from './pages/Assistant';
 import { CashUp } from './pages/CashUp';
 import { Admin } from './pages/Admin';
+import { AdminLayout } from './pages/admin/AdminLayout';
+import { AdminAccounts } from './pages/admin/Accounts';
+import { AdminUsers } from './pages/admin/Users';
+import { AdminPayments } from './pages/admin/Payments';
+import { AdminAuditLog } from './pages/admin/AuditLog';
+import { AdminSystem } from './pages/admin/System';
 import { Billing } from './pages/Billing';
 import { BillingCallback } from './pages/BillingCallback';
 import { SettingsPage } from './pages/Settings';
@@ -71,9 +77,17 @@ export function App() {
             <Route path="reports" element={<Reports />} />
           </Route>
 
-          {/* BizPilot's own books. The route is always mounted — the API is
-              what refuses, so there is nothing to gain by guessing the URL. */}
-          <Route path="admin" element={<Admin />} />
+          {/* BizPilot's own books and controls. The routes are always mounted —
+              the API is what refuses, so there is nothing to gain by guessing
+              the URL. */}
+          <Route path="admin" element={<AdminLayout />}>
+            <Route index element={<Admin />} />
+            <Route path="accounts" element={<AdminAccounts />} />
+            <Route path="users" element={<AdminUsers />} />
+            <Route path="payments" element={<AdminPayments />} />
+            <Route path="audit" element={<AdminAuditLog />} />
+            <Route path="system" element={<AdminSystem />} />
+          </Route>
         </Route>
       </Route>
 

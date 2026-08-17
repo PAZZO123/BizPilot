@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PaymentStatus, SubscriptionStatus } from '@prisma/client';
 import { PLANS, type PlanId } from '@bizpilot/shared';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { platformAdminEmails } from './platform-admin.guard';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -255,6 +256,53 @@ export class AdminService {
             : 0,
       };
     });
+  }
+
+  /**
+   * What this installation is actually wired to.
+   *
+   * Half the support questions in a self-run SaaS are "is the thing switched
+   * on?" — payments, the assistant, SMS. Reading that off a screen beats
+   * shelling into the host to grep environment variables, and it is the first
+   * place to look when a customer says a feature does nothing.
+   *
+   * Names and on/off only. No key, or part of a key, is ever returned.
+   */
+  system() {
+    const paymentProvider = this.config.get<string>('PAYMENT_PROVIDER', 'flutterwave');
+    const momoEnvironment = this.config.get<string>('MOMO_TARGET_ENVIRONMENT', 'sandbox');
+
+    return {
+      payments: {
+        provider: paymentProvider,
+        configured:
+          paymentProvider === 'mtn-momo'
+            ? Boolean(
+                this.config.get<string>('MOMO_SUBSCRIPTION_KEY') &&
+                  this.config.get<string>('MOMO_API_USER') &&
+                  this.config.get<string>('MOMO_API_KEY'),
+              )
+            : Boolean(this.config.get<string>('FLUTTERWAVE_SECRET_KEY')),
+        environment: paymentProvider === 'mtn-momo' ? momoEnvironment : 'live',
+        /** Sandbox takes no real money — worth saying plainly on the screen. */
+        takesRealMoney: paymentProvider !== 'mtn-momo' || momoEnvironment === 'production',
+        callbackSecretSet: Boolean(this.config.get<string>('MOMO_CALLBACK_SECRET')),
+      },
+      assistant: {
+        provider: this.config.get<string>('AI_PROVIDER', 'anthropic'),
+        model: this.config.get<string>('ANTHROPIC_MODEL', 'claude-opus-5'),
+        configured: Boolean(
+          this.config.get<string>('ANTHROPIC_API_KEY') || this.config.get<string>('AI_API_KEY'),
+        ),
+      },
+      sms: {
+        configured: Boolean(this.config.get<string>('SMS_API_KEY')),
+        sender: this.config.get<string>('SMS_SENDER_ID', ''),
+      },
+      platformAdmins: platformAdminEmails(this.config).length,
+      environment: this.config.get<string>('NODE_ENV', 'development'),
+      startedAt: new Date(Date.now() - Math.round(process.uptime() * 1000)),
+    };
   }
 
   private async sumCollected(createdAt: { gte: Date } | undefined): Promise<number> {

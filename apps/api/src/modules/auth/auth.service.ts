@@ -17,6 +17,16 @@ import type { ChangePasswordDto, InviteUserDto, LoginDto, RegisterDto } from './
 
 const BCRYPT_ROUNDS = 12;
 
+/**
+ * Shown when the whole shop is suspended rather than one person's login.
+ *
+ * Says who to talk to, because the shopkeeper cannot fix this themselves and a
+ * bare "not active" sends them hunting through their own settings for a switch
+ * that is not there.
+ */
+const SUSPENDED_MESSAGE =
+  'This shop has been suspended. Please contact BizPilot support to restore it.';
+
 interface SessionContext {
   userAgent?: string;
   ip?: string;
@@ -91,6 +101,7 @@ export class AuthService {
     const email = normaliseEmail(dto.email);
     const user = await this.prisma.user.findFirst({
       where: { email, deletedAt: null },
+      include: { business: { select: { deletedAt: true } } },
     });
 
     // Compare against a dummy hash when the user is missing so the response
@@ -103,6 +114,13 @@ export class AuthService {
     }
     if (!user.isActive) {
       throw new UnauthorizedException('This account has been deactivated by the owner.');
+    }
+    // A suspended shop must not be able to sign in. Checking only the user left
+    // suspension purely cosmetic: every member of a suspended business could
+    // still log in and keep trading, because nothing on the user row changes
+    // when the business is suspended.
+    if (user.business.deletedAt) {
+      throw new UnauthorizedException(SUSPENDED_MESSAGE);
     }
 
     await this.prisma.user.update({
@@ -117,7 +135,7 @@ export class AuthService {
     const tokenHash = hashToken(refreshToken);
     const stored = await this.prisma.refreshToken.findUnique({
       where: { tokenHash },
-      include: { user: true },
+      include: { user: { include: { business: { select: { deletedAt: true } } } } },
     });
 
     if (!stored || stored.revokedAt || stored.expiresAt.getTime() < Date.now()) {
@@ -125,6 +143,12 @@ export class AuthService {
     }
     if (!stored.user.isActive || stored.user.deletedAt) {
       throw new UnauthorizedException('This account is no longer active.');
+    }
+    // Checked on refresh as well as login: access tokens live for fifteen
+    // minutes, so without this a suspended shop keeps working until every one
+    // of its sessions happens to expire.
+    if (stored.user.business.deletedAt) {
+      throw new UnauthorizedException(SUSPENDED_MESSAGE);
     }
 
     // Rotate: the presented token is burned as soon as it is exchanged, so a
