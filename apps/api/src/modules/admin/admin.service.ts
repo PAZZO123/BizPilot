@@ -42,6 +42,8 @@ export class AdminService {
       collectedAllTime,
       smsCostThisMonth,
       aiMessagesThisMonth,
+      aiTokensThisMonth,
+      aiUnmeteredCount,
       activeShopsLast30,
       totalShops,
     ] = await Promise.all([
@@ -82,6 +84,18 @@ export class AdminService {
         where: { metric: 'ai_messages', period: monthStart },
         _sum: { count: true },
       }),
+      // Real token counts, recorded on every assistant reply. These price the
+      // AI line from what was actually consumed instead of a per-message guess.
+      this.prisma.aiMessage.aggregate({
+        where: { role: 'assistant', createdAt: { gte: monthStart } },
+        _sum: { inputTokens: true, outputTokens: true },
+      }),
+      // Replies from before token metering existed (or from a provider that
+      // reports no usage) have NULL counts. They still cost something, so they
+      // are priced by the old per-message estimate rather than counted as free.
+      this.prisma.aiMessage.count({
+        where: { role: 'assistant', createdAt: { gte: monthStart }, inputTokens: null },
+      }),
       // A shop that recorded a sale in the last 30 days is a shop that has not
       // quietly stopped using the product — the number that predicts churn
       // before the subscription status does.
@@ -113,7 +127,20 @@ export class AdminService {
     const payingShops = planCounts.reduce((total, row) => total + row.shops, 0);
 
     const aiCount = aiMessagesThisMonth._sum.count ?? 0;
-    const aiCost = aiCount * this.config.get<number>('AI_COST_PER_MESSAGE_RWF', 1500);
+    const aiInputTokens = aiTokensThisMonth._sum.inputTokens ?? 0;
+    const aiOutputTokens = aiTokensThisMonth._sum.outputTokens ?? 0;
+
+    // Metered replies are priced from real token counts at the configured
+    // per-million rates; unmetered ones (older rows, or a provider that reports
+    // no usage) fall back to the per-message estimate. Rates are whole RWF per
+    // million tokens; the result is minor units like every other money figure.
+    const inputRate = this.config.get<number>('AI_INPUT_RWF_PER_MTOK', 7250);
+    const outputRate = this.config.get<number>('AI_OUTPUT_RWF_PER_MTOK', 36250);
+    const meteredCost = Math.round(
+      ((aiInputTokens * inputRate + aiOutputTokens * outputRate) / 1_000_000) * 100,
+    );
+    const aiCost =
+      meteredCost + aiUnmeteredCount * this.config.get<number>('AI_COST_PER_MESSAGE_RWF', 1500);
     const smsCost = Number(smsCostThisMonth._sum.cost ?? 0n);
 
     return {
@@ -142,6 +169,10 @@ export class AdminService {
       costs: {
         smsThisMonth: smsCost,
         aiMessagesThisMonth: aiCount,
+        aiInputTokensThisMonth: aiInputTokens,
+        aiOutputTokensThisMonth: aiOutputTokens,
+        /** Replies with no recorded usage, priced by the per-message estimate. */
+        aiUnmeteredThisMonth: aiUnmeteredCount,
         aiCostThisMonth: aiCost,
         totalThisMonth: smsCost + aiCost,
       },

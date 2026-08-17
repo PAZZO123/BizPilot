@@ -34,6 +34,9 @@ interface Overview {
   costs: {
     smsThisMonth: number;
     aiMessagesThisMonth: number;
+    aiInputTokensThisMonth: number;
+    aiOutputTokensThisMonth: number;
+    aiUnmeteredThisMonth: number;
     aiCostThisMonth: number;
     totalThisMonth: number;
   };
@@ -284,8 +287,18 @@ export function Admin() {
             </div>
           </div>
           <p className="mt-3 text-xs text-slate-500">
-            The assistant is priced from <code>AI_COST_PER_MESSAGE_RWF</code>, an estimate. Check it
-            against a real Anthropic invoice before trusting this line.
+            Assistant cost is computed from real usage —{' '}
+            {formatNumber(data.costs.aiInputTokensThisMonth)} tokens in,{' '}
+            {formatNumber(data.costs.aiOutputTokensThisMonth)} out — at the{' '}
+            <code>AI_*_RWF_PER_MTOK</code> rates.
+            {data.costs.aiUnmeteredThisMonth > 0 && (
+              <>
+                {' '}
+                {formatNumber(data.costs.aiUnmeteredThisMonth)} older replies have no recorded
+                usage and are priced by the <code>AI_COST_PER_MESSAGE_RWF</code> estimate.
+              </>
+            )}{' '}
+            Check the total against a real provider invoice now and then.
           </p>
         </Card>
       </div>

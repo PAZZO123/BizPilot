@@ -53,9 +53,19 @@ const envSchema = z.object({
    */
   PLATFORM_ADMIN_EMAILS: z.string().optional().default(''),
 
-  /** Estimated cost of one assistant question, in RWF minor units, used only
-   *  to show gross margin on the platform dashboard. */
+  /** Estimated cost of one assistant question, in RWF minor units. Only used
+   *  for replies with no recorded token usage — everything since token
+   *  metering landed is priced from the real counts below. */
   AI_COST_PER_MESSAGE_RWF: z.coerce.number().nonnegative().default(1500),
+
+  /**
+   * What the AI provider charges, converted to whole RWF per million tokens.
+   * Defaults are claude-opus-5 ($5 in / $25 out) at ~1,450 RWF to the dollar.
+   * Update these when the model or the exchange rate moves — the dashboard's
+   * gross margin is only as honest as these two numbers.
+   */
+  AI_INPUT_RWF_PER_MTOK: z.coerce.number().nonnegative().default(7250),
+  AI_OUTPUT_RWF_PER_MTOK: z.coerce.number().nonnegative().default(36250),
 
   /**
    * Which service answers assistant questions.
