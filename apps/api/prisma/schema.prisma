@@ -66,32 +66,32 @@ enum SubscriptionStatus {
 }
 
 model Business {
-  id           String       @id @default(uuid())
-  name         String
-  type         BusinessType @default(SHOP)
+  id            String       @id @default(uuid())
+  name          String
+  type          BusinessType @default(SHOP)
   /// ISO 4217 code. Drives formatting and the currency we charge in.
-  currency     String       @default("RWF")
+  currency      String       @default("RWF")
   /// ISO 3166-1 alpha-2, used to pick payment channels (MoMo vs card).
-  country      String       @default("RW")
-  timezone     String       @default("Africa/Kigali")
-  phone        String?
-  email        String?
-  address      String?
-  logoUrl      String?
+  country       String       @default("RW")
+  timezone      String       @default("Africa/Kigali")
+  phone         String?
+  email         String?
+  address       String?
+  logoUrl       String?
   /// Printed on invoices, e.g. a TIN.
-  taxId        String?
+  taxId         String?
   /// Percentage in basis points (1800 = 18% VAT). Applied when a sale opts in.
-  defaultTaxBps Int         @default(0)
+  defaultTaxBps Int          @default(0)
   /// Invoice numbering, e.g. "INV-0042".
-  invoicePrefix String      @default("INV")
-  receiptPrefix String      @default("RCP")
+  invoicePrefix String       @default("INV")
+  receiptPrefix String       @default("RCP")
 
   plan               PlanId             @default(free)
   subscriptionStatus SubscriptionStatus @default(TRIALING)
   trialEndsAt        DateTime?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
   users           User[]
@@ -120,27 +120,28 @@ enum UserRole {
 }
 
 model User {
-  id           String   @id @default(uuid())
+  id           String    @id @default(uuid())
   businessId   String
-  business     Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business     Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
   email        String
   passwordHash String
   name         String
   phone        String?
-  role         UserRole @default(CASHIER)
-  isActive     Boolean  @default(true)
+  role         UserRole  @default(CASHIER)
+  isActive     Boolean   @default(true)
   lastLoginAt  DateTime?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  refreshTokens   RefreshToken[]
-  sales           Sale[]
-  expenses        Expense[]
-  stockMovements  StockMovement[]
-  aiConversations AiConversation[]
-  auditLogs       AuditLog[]
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+  sales               Sale[]
+  expenses            Expense[]
+  stockMovements      StockMovement[]
+  aiConversations     AiConversation[]
+  auditLogs           AuditLog[]
 
   /// Email is unique globally: it is the login identifier, so one address maps
   /// to exactly one account. Staff at two businesses need two addresses.
@@ -150,34 +151,54 @@ model User {
 }
 
 model RefreshToken {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   /// SHA-256 of the token. The raw value only ever exists in the client.
-  tokenHash String   @unique
+  tokenHash String    @unique
   expiresAt DateTime
   revokedAt DateTime?
   userAgent String?
   ip        String?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   @@index([userId])
   @@index([expiresAt])
   @@map("refresh_tokens")
 }
 
+/// A forgot-password token. Single-use and short-lived: thirty minutes is
+/// enough to walk to a computer and click a link, and short enough that a
+/// mailbox someone left open on a shared shop computer is not a standing
+/// backdoor into the account.
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// SHA-256 of the token, same rule as refresh tokens: the raw value only
+  /// ever exists in the email.
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  ip        String?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
 /// A branch or outlet. Every business gets a default location at signup;
 /// additional locations are gated behind the Business plan.
 model Location {
-  id         String   @id @default(uuid())
+  id         String    @id @default(uuid())
   businessId String
-  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business   Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
   name       String
   address    String?
   phone      String?
-  isDefault  Boolean  @default(false)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  isDefault  Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
   deletedAt  DateTime?
 
   sales          Sale[]
@@ -220,8 +241,8 @@ model Product {
   imageUrl String?
   isActive Boolean @default(true)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
   saleItems      SaleItem[]
@@ -246,26 +267,26 @@ enum StockMovementType {
 /// Append-only ledger of every stock change. `stockQty` on Product is the
 /// running total; this table is why it has that value.
 model StockMovement {
-  id         String   @id @default(uuid())
+  id         String    @id @default(uuid())
   businessId String
-  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business   Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
   productId  String
-  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product    Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
   locationId String?
   location   Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
   userId     String?
-  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user       User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
 
-  type StockMovementType
+  type         StockMovementType
   /// Signed: positive adds stock, negative removes it.
-  quantity Int
+  quantity     Int
   /// Stock on hand immediately after this movement, for audit trails.
   balanceAfter Int
   /// Unit cost for PURCHASE movements, used for cost-price averaging.
-  unitCost BigInt?
-  note     String?
+  unitCost     BigInt?
+  note         String?
   /// Sale id, invoice id or supplier reference that caused the movement.
-  reference String?
+  reference    String?
 
   createdAt DateTime @default(now())
 
@@ -289,10 +310,10 @@ model Customer {
   address String?
   note    String?
   /// Outstanding credit owed to the business, in minor units.
-  balance BigInt @default(0)
+  balance BigInt  @default(0)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
   sales       Sale[]
@@ -320,13 +341,13 @@ enum SaleStatus {
 }
 
 model Sale {
-  id         String   @id @default(uuid())
+  id         String    @id @default(uuid())
   businessId String
-  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business   Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
   locationId String?
   location   Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
   userId     String?
-  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user       User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
   customerId String?
   customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
@@ -334,16 +355,16 @@ model Sale {
   number String
 
   /// Sum of line totals before discount and tax.
-  subtotal BigInt
+  subtotal   BigInt
   /// Absolute discount applied to the whole sale.
-  discount BigInt @default(0)
+  discount   BigInt @default(0)
   /// Tax charged, in minor units.
-  tax      BigInt @default(0)
+  tax        BigInt @default(0)
   /// subtotal - discount + tax
-  total    BigInt
+  total      BigInt
   /// Sum of cost prices at time of sale — snapshotted so later price changes
   /// do not rewrite historical profit.
-  costTotal BigInt @default(0)
+  costTotal  BigInt @default(0)
   /// How much the customer has actually handed over so far.
   amountPaid BigInt @default(0)
 
@@ -352,9 +373,9 @@ model Sale {
   note          String?
 
   /// When the sale happened — backdating is allowed, so this is not createdAt.
-  soldAt    DateTime @default(now())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  soldAt    DateTime  @default(now())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   voidedAt  DateTime?
 
   items    SaleItem[]
@@ -369,9 +390,9 @@ model Sale {
 }
 
 model SaleItem {
-  id     String @id @default(uuid())
-  saleId String
-  sale   Sale   @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  id        String   @id @default(uuid())
+  saleId    String
+  sale      Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
   /// Nullable so deleting a product never destroys sales history.
   productId String?
   product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
@@ -401,14 +422,14 @@ enum InvoiceStatus {
 }
 
 model Invoice {
-  id         String   @id @default(uuid())
+  id         String    @id @default(uuid())
   businessId String
-  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business   Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
   customerId String?
   customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
   /// Set when the invoice was generated from a completed sale.
-  saleId     String?  @unique
-  sale       Sale?    @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  saleId     String?   @unique
+  sale       Sale?     @relation(fields: [saleId], references: [id], onDelete: SetNull)
 
   number String
   status InvoiceStatus @default(DRAFT)
@@ -419,17 +440,17 @@ model Invoice {
   total      BigInt
   amountPaid BigInt @default(0)
 
-  issueDate DateTime @default(now())
+  issueDate DateTime  @default(now())
   dueDate   DateTime?
   notes     String?
   terms     String?
 
   /// Opaque token for the public /pay/:token page — lets a customer view and
   /// pay without an account. Rotated if the owner revokes the link.
-  publicToken String  @unique @default(uuid())
+  publicToken String @unique @default(uuid())
 
-  sentAt   DateTime?
-  paidAt   DateTime?
+  sentAt         DateTime?
+  paidAt         DateTime?
   /// Last time a reminder SMS went out, so we do not spam daily.
   lastReminderAt DateTime?
 
@@ -447,9 +468,9 @@ model Invoice {
 }
 
 model InvoiceItem {
-  id        String  @id @default(uuid())
+  id        String   @id @default(uuid())
   invoiceId String
-  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   productId String?
   product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
 
@@ -457,7 +478,7 @@ model InvoiceItem {
   description String?
   quantity    Int
   unitPrice   BigInt
-  discount    BigInt @default(0)
+  discount    BigInt  @default(0)
   total       BigInt
 
   @@index([invoiceId])
@@ -478,13 +499,13 @@ enum PaymentStatus {
 /// A payment received from a customer. Subscription payments the business
 /// makes to BizPilot live in BillingTransaction instead.
 model Payment {
-  id         String   @id @default(uuid())
+  id         String    @id @default(uuid())
   businessId String
-  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business   Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
   saleId     String?
-  sale       Sale?    @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  sale       Sale?     @relation(fields: [saleId], references: [id], onDelete: SetNull)
   invoiceId  String?
-  invoice    Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  invoice    Invoice?  @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
   customerId String?
   customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
@@ -494,12 +515,12 @@ model Payment {
   status   PaymentStatus @default(SUCCESSFUL)
 
   /// Gateway identifier, e.g. "flutterwave". Null for cash taken at the counter.
-  provider    String?
+  provider     String?
   /// Our reference, sent to the gateway as tx_ref. Unique so webhook replays
   /// cannot double-credit an invoice.
-  reference   String? @unique
+  reference    String? @unique
   /// The gateway's own transaction id, returned on verification.
-  providerRef String?
+  providerRef  String?
   /// Raw verification payload, kept for dispute resolution.
   providerMeta Json?
 
@@ -513,26 +534,26 @@ model Payment {
 }
 
 model Expense {
-  id         String   @id @default(uuid())
+  id         String    @id @default(uuid())
   businessId String
-  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business   Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
   locationId String?
   location   Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
   userId     String?
-  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user       User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   /// Free text so a shop can use its own vocabulary: "rent", "transport",
   /// "airtime", "stock purchase".
-  category String
-  amount   BigInt
-  note     String?
-  vendor   String?
-  method   PaymentMethod @default(CASH)
+  category   String
+  amount     BigInt
+  note       String?
+  vendor     String?
+  method     PaymentMethod @default(CASH)
   receiptUrl String?
 
-  spentAt   DateTime @default(now())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  spentAt   DateTime  @default(now())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
   @@index([businessId, spentAt])
@@ -553,16 +574,16 @@ model Subscription {
   status SubscriptionStatus @default(TRIALING)
 
   /// "flutterwave" once a paid plan is active.
-  provider    String?
+  provider       String?
   /// Flutterwave payment-plan id, when using their recurring billing.
   providerPlanId String?
   /// Flutterwave subscription id, for cancellation.
-  providerRef String?
+  providerRef    String?
 
   currentPeriodStart DateTime?
   currentPeriodEnd   DateTime?
   /// Set when the owner cancels: access continues until currentPeriodEnd.
-  cancelAtPeriodEnd  Boolean  @default(false)
+  cancelAtPeriodEnd  Boolean   @default(false)
   cancelledAt        DateTime?
 
   createdAt DateTime @default(now())
@@ -580,13 +601,13 @@ model BillingTransaction {
 
   plan     PlanId
   amount   BigInt
-  currency String @default("RWF")
+  currency String        @default("RWF")
   status   PaymentStatus @default(PENDING)
 
-  provider    String  @default("flutterwave")
+  provider     String  @default("flutterwave")
   /// tx_ref we generated. Unique — the webhook is idempotent on this.
-  reference   String  @unique
-  providerRef String?
+  reference    String  @unique
+  providerRef  String?
   providerMeta Json?
 
   periodStart DateTime?
@@ -607,10 +628,10 @@ model UsageCounter {
   businessId String
   business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
   /// "sales", "sms", "ai_messages"
-  metric String
+  metric     String
   /// First day of the month this counter covers, at UTC midnight.
-  period DateTime
-  count  Int      @default(0)
+  period     DateTime
+  count      Int      @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -631,13 +652,13 @@ enum SmsStatus {
 }
 
 model SmsMessage {
-  id         String   @id @default(uuid())
+  id         String    @id @default(uuid())
   businessId String
-  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business   Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
   customerId String?
   customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
   invoiceId  String?
-  invoice    Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  invoice    Invoice?  @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
 
   /// E.164, e.g. +250788123456.
   to     String
@@ -653,8 +674,8 @@ model SmsMessage {
   cost        BigInt?
 
   sentAt    DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   @@index([businessId, createdAt])
   @@index([status])
@@ -692,10 +713,10 @@ model AiMessage {
   conversationId String
   conversation   AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
-  role    AiRole
-  content String
+  role         AiRole
+  content      String
   /// Names of the data tools the assistant ran to answer, for transparency.
-  toolsUsed String[] @default([])
+  toolsUsed    String[] @default([])
   /// Token counts, for cost attribution per business.
   inputTokens  Int?
   outputTokens Int?

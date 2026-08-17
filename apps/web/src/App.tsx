@@ -7,6 +7,8 @@ import { canManage, useAuth } from './store/auth';
 import { Landing } from './pages/Landing';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
+import { ForgotPassword } from './pages/ForgotPassword';
+import { ResetPassword } from './pages/ResetPassword';
 import { Dashboard } from './pages/Dashboard';
 import { Sell } from './pages/Sell';
 import { Sales } from './pages/Sales';
@@ -50,6 +52,11 @@ export function App() {
       <Route path="/" element={status === 'authenticated' ? <Navigate to="/app" replace /> : <Landing />} />
       <Route path="/login" element={status === 'authenticated' ? <Navigate to="/app" replace /> : <Login />} />
       <Route path="/signup" element={status === 'authenticated' ? <Navigate to="/app" replace /> : <Register />} />
+      {/* Reachable while logged in on purpose: the link arrives by email, and
+          someone logged in on a shared shop computer may be resetting the
+          password precisely because of it. */}
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       {/* Customer-facing invoice link — deliberately reachable without an account. */}
       <Route path="/pay/:token" element={<PublicInvoice />} />
       <Route path="/pay/:token/callback" element={<PublicInvoice />} />

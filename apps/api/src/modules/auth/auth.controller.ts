@@ -15,10 +15,12 @@ import { BusinessId, CurrentUser, Public, Roles } from '../../common/decorators'
 import { AuthService } from './auth.service';
 import {
   ChangePasswordDto,
+  ForgotPasswordDto,
   InviteUserDto,
   LoginDto,
   RefreshDto,
   RegisterDto,
+  ResetPasswordDto,
 } from './dto/auth.dto';
 
 @ApiTags('auth')
@@ -59,6 +61,29 @@ export class AuthController {
   @ApiOperation({ summary: 'Revoke a refresh token' })
   async logout(@Body() dto: RefreshDto): Promise<void> {
     await this.auth.logout(dto.refreshToken);
+  }
+
+  @Public()
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Email a password-reset link' })
+  // Tighter than login: each request can send an email, and the response never
+  // says whether the address exists, so a human has no reason to retry fast.
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  async forgotPassword(@Body() dto: ForgotPasswordDto, @Req() req: Request) {
+    await this.auth.forgotPassword(dto.email, sessionContext(req));
+    return {
+      message: 'If that email has a BizPilot account, a reset link is on its way.',
+    };
+  }
+
+  @Public()
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Set a new password using an emailed token' })
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.auth.resetPassword(dto.token, dto.newPassword);
   }
 
   @Get('me')

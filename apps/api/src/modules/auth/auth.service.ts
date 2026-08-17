@@ -1,7 +1,9 @@
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -13,6 +15,8 @@ import { TRIAL_DAYS } from '@bizpilot/shared';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { EntitlementsService } from '../entitlements/entitlements.service';
 import { isPlatformAdmin } from '../admin/platform-admin.guard';
+import { MAIL_PROVIDER } from '../mail/mail.tokens';
+import type { MailProvider } from '../mail/mail-provider.interface';
 import type { ChangePasswordDto, InviteUserDto, LoginDto, RegisterDto } from './dto/auth.dto';
 
 const BCRYPT_ROUNDS = 12;
@@ -32,13 +36,19 @@ interface SessionContext {
   ip?: string;
 }
 
+/** How long a reset link stays valid. */
+const RESET_TOKEN_MINUTES = 30;
+
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly entitlements: EntitlementsService,
+    @Inject(MAIL_PROVIDER) private readonly mail: MailProvider,
   ) {}
 
   /**
@@ -189,6 +199,103 @@ export class AuthService {
       data: { passwordHash: await bcrypt.hash(dto.newPassword, BCRYPT_ROUNDS) },
     });
     await this.revokeAllSessions(userId);
+
+    return { success: true };
+  }
+
+  /**
+   * Starts a password reset. Always resolves to the same answer whether or not
+   * the email exists — anything else turns this endpoint into a free service
+   * for checking which addresses have BizPilot accounts.
+   */
+  async forgotPassword(rawEmail: string, ctx: SessionContext): Promise<void> {
+    const email = normaliseEmail(rawEmail);
+    const user = await this.prisma.user.findFirst({
+      where: { email, deletedAt: null, isActive: true },
+      include: { business: { select: { deletedAt: true } } },
+    });
+
+    // A suspended shop's members cannot reset their way back in either.
+    if (!user || user.business.deletedAt) {
+      return;
+    }
+
+    const token = randomBytes(32).toString('hex');
+
+    await this.prisma.$transaction([
+      // One live token per user: requesting again invalidates the last email,
+      // so a forgotten tab or a re-sent request never leaves two doors open.
+      this.prisma.passwordResetToken.updateMany({
+        where: { userId: user.id, usedAt: null },
+        data: { usedAt: new Date() },
+      }),
+      this.prisma.passwordResetToken.create({
+        data: {
+          userId: user.id,
+          tokenHash: hashToken(token),
+          expiresAt: new Date(Date.now() + RESET_TOKEN_MINUTES * 60 * 1000),
+          ip: ctx.ip,
+        },
+      }),
+    ]);
+
+    const webUrl = this.config.get<string>('WEB_URL', 'http://localhost:5173');
+    const link = `${webUrl.replace(/\/$/, '')}/reset-password?token=${token}`;
+
+    try {
+      await this.mail.send({
+        to: user.email,
+        subject: 'Reset your BizPilot password',
+        text: [
+          `Hi ${user.name},`,
+          '',
+          'Someone asked to reset the password for this BizPilot account.',
+          `If that was you, open this link within ${RESET_TOKEN_MINUTES} minutes:`,
+          '',
+          link,
+          '',
+          'If it was not you, ignore this email — your password has not changed.',
+        ].join('\n'),
+      });
+    } catch (error) {
+      // The 200 already promised nothing either way; what must not happen is
+      // the failure disappearing. The token row exists, so support can also
+      // walk someone through it manually from the log.
+      this.logger.error(`Password reset mail to ${user.email} failed: ${String(error)}`);
+    }
+  }
+
+  /** Completes a reset: burns the token, sets the password, ends every session. */
+  async resetPassword(token: string, newPassword: string): Promise<{ success: true }> {
+    const stored = await this.prisma.passwordResetToken.findUnique({
+      where: { tokenHash: hashToken(token) },
+      include: { user: { select: { id: true, isActive: true, deletedAt: true } } },
+    });
+
+    if (
+      !stored ||
+      stored.usedAt ||
+      stored.expiresAt.getTime() < Date.now() ||
+      !stored.user.isActive ||
+      stored.user.deletedAt
+    ) {
+      throw new BadRequestException(
+        'This reset link is invalid or has expired. Please request a new one.',
+      );
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.passwordResetToken.update({
+        where: { id: stored.id },
+        data: { usedAt: new Date() },
+      }),
+      this.prisma.user.update({
+        where: { id: stored.user.id },
+        data: { passwordHash: await bcrypt.hash(newPassword, BCRYPT_ROUNDS) },
+      }),
+    ]);
+    // Whoever held the old password loses every session along with it.
+    await this.revokeAllSessions(stored.user.id);
 
     return { success: true };
   }

@@ -96,6 +96,26 @@ export class InviteUserDto {
   phone?: string;
 }
 
+export class ForgotPasswordDto {
+  @ApiProperty()
+  @IsEmail()
+  email!: string;
+}
+
+export class ResetPasswordDto {
+  @ApiProperty({ description: 'The token from the reset email.' })
+  @IsString()
+  @Length(32, 128)
+  token!: string;
+
+  @ApiProperty({ minLength: 8 })
+  @IsString()
+  @MinLength(8)
+  @Matches(/[A-Za-z]/, { message: 'Password must contain a letter' })
+  @Matches(/[0-9]/, { message: 'Password must contain a number' })
+  newPassword!: string;
+}
+
 export class ChangePasswordDto {
   @ApiProperty()
   @IsString()

@@ -63,6 +63,14 @@ export function Login() {
               value={password}
               onChange={(event) => setPassword(event.target.value)}
             />
+            <div className="-mt-2 text-right">
+              <Link
+                to="/forgot-password"
+                className="text-sm font-medium text-brand-700 hover:underline"
+              >
+                Forgot password?
+              </Link>
+            </div>
 
             {error && (
               <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
