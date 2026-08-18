@@ -188,6 +188,9 @@ depends on it:
    Sleeping also stops the cron jobs that mark invoices overdue and send reminders.
 3. **Fix the top three items in [docs/SECURITY.md](docs/SECURITY.md)** — refresh
    tokens in `localStorage`, no token-reuse detection, no email verification.
+4. **Set a real `MAIL_PROVIDER`.** Password reset is built, but on the default
+   `log` provider the reset link goes to the server log instead of an inbox —
+   which becomes an outage the first time an owner forgets their password.
 
 ---
 
